@@ -55,7 +55,7 @@ topLogicUart baud rx = tx
         , predicates = ilaDefaultPredicates
         -- ^ The list of predicates to select from during runtime
         }
-  tx = snd $ demoIla (rx, (pure ()))
+  tx = snd $ demoIla (rx, (()))
 
 -- | The top entity
 topEntity ::

@@ -1,10 +1,10 @@
-{ 
+{
   description = "A flake enabling tooling for clash-formal-playground";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     clash-compiler.url = "github:clash-lang/clash-compiler";
     clash-cores = {
-      url = "github:jaschutte/clash-cores";
+      url = "github:jaschutte/clash-cores/c8f74f21ffffeaa7c765657841269ca8da3babed";
       inputs.clash-compiler.follows = "clash-compiler";
     };
     ecpprog.url = "github:diegodiv/ecpprog";
@@ -47,7 +47,7 @@
             p.clash-ila
           ];
 
-          nativeBuildInputs = 
+          nativeBuildInputs =
             [
               # For interacting with the OrangeCrab board.
               pkgs.yosys

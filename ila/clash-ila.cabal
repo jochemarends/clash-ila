@@ -76,7 +76,6 @@ library
   other-modules:
     Clash.Ila.Internal.Communication
     Clash.Ila.Internal.RingBuffer
-    Clash.Ila.Internal.SignalFieldSelectors
 
 test-suite unittests
   import: common-options

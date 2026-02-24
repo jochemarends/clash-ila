@@ -142,7 +142,7 @@ ringBufferReaderPS buffer = Circuit exposeIn
         (Just <$> liftA3 formatData bufferValue bufferLength readCount)
         (pure Nothing)
 
-    out = (pure (), packetStream)
+    out = ((), packetStream)
 
 -- | A testbench for the ring buffer, capable of reading out the entire content of the ringBuffer
 testbenchRingBuffer ::

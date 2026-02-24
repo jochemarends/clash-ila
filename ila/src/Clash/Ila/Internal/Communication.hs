@@ -12,8 +12,6 @@ import Protocols.Df qualified as Df
 import Protocols.PacketStream
 
 import Data.Maybe qualified as DM
-import Data.String.Interpolate (__i)
-import Debug.Trace
 
 {- | Send out `Df` data through UART
 
@@ -38,7 +36,7 @@ uartDf baud = Circuit exposeIn
     (recieved, txBit, acked) = uart baud rxBit transmit
 
     out =
-      ( (Ack <$> acked, pure ())
+      ( (Ack <$> acked, ())
       , (recieved, txBit)
       )
 
@@ -70,7 +68,7 @@ holdUntilAck = Circuit exposeIn
     ackToBool :: Ack -> Bool
     ackToBool (Ack b) = b
 
-    out = (pure (), hold)
+    out = ((), hold)
 
 {- | Silently drops the meta of a `PacketStream`
 Makes no other modifications to the `PacketStream` itself

@@ -10,11 +10,11 @@
         "flake-utils": "flake-utils_2"
       },
       "locked": {
-        "lastModified": 1753788891,
-        "narHash": "sha256-UcrvegnJUr0iIuR1nK9gmWufx+lfVhbdVnA7tF9YiSY=",
+        "lastModified": 1754654260,
+        "narHash": "sha256-lnWz7cjZYkgH7IF1VvXy0n6xw+faNJbdrF/79QIieDo=",
         "owner": "cchalmers",
         "repo": "circuit-notation",
-        "rev": "68484f9837b9915ac5b340aeafeda3f8c0c4d3fa",
+        "rev": "a99969b79df6752532792fd30482b83cf3285f52",
         "type": "github"
       },
       "original": {
@@ -56,16 +56,17 @@
         "flake-utils": "flake-utils_4"
       },
       "locked": {
-        "lastModified": 1753879062,
-        "narHash": "sha256-nMvkS3DkhQ8qv3Gt3zWiQnnMT/iksMGB/3HDgdWadlk=",
+        "lastModified": 1766072354,
+        "narHash": "sha256-CVsgrKpx9MyKWBGyVX3q5Bs0WVUBJvIJy73/vCtH19s=",
         "owner": "jaschutte",
         "repo": "clash-cores",
-        "rev": "f6c2a587f187477bb9d5ea0268f7acf94ae6eecb",
+        "rev": "c8f74f21ffffeaa7c765657841269ca8da3babed",
         "type": "github"
       },
       "original": {
         "owner": "jaschutte",
         "repo": "clash-cores",
+        "rev": "c8f74f21ffffeaa7c765657841269ca8da3babed",
         "type": "github"
       }
     },
@@ -79,16 +80,17 @@
         "flake-utils": "flake-utils_3"
       },
       "locked": {
-        "lastModified": 1753793461,
-        "narHash": "sha256-X6q8naDK7SufBaE0DrvSMyQTOynNNxuRN0JMkGsXeLQ=",
+        "lastModified": 1766065626,
+        "narHash": "sha256-OFI4aiWVZAjIEiPn6sh+Fi8qkF+3WqtcjoXwPSL34U8=",
         "owner": "clash-lang",
         "repo": "clash-protocols",
-        "rev": "d4f1c73ad71fe78210b9fde882cb7744197031e6",
+        "rev": "f8ffcb32efee574e67208010ed634c540b53debb",
         "type": "github"
       },
       "original": {
         "owner": "clash-lang",
         "repo": "clash-protocols",
+        "rev": "f8ffcb32efee574e67208010ed634c540b53debb",
         "type": "github"
       }
     },

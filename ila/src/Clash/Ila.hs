@@ -2,7 +2,6 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TypeAbstractions #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE NoFieldSelectors #-}
 {-# OPTIONS_GHC -fconstraint-solver-iterations=10 #-}
 {-# OPTIONS_GHC -fplugin=Protocols.Plugin #-}
@@ -18,7 +17,6 @@ import Clash.Prelude
 import Clash.Ila.Configurator
 import Clash.Ila.Internal.RingBuffer
 import Clash.Ila.Internal.Communication
-import Clash.Ila.Internal.SignalFieldSelectors
 
 import Clash.Cores.Etherbone (etherboneC)
 import Clash.Cores.UART (ValidBaud)
@@ -128,7 +126,7 @@ ilaBufferManager ::
   -- | The ILA buffer
   (Signal dom (Index depth) -> (Signal dom a, Signal dom (Index (depth + 1)))) ->
   -- | The incoming Wishbone M2S signal
-  Signal dom (WishboneM2S addrW 4 (BitVector 32)) ->
+  Signal dom (WishboneM2S addrW 4) ->
   -- | What word from the buffer entry to read
   Signal dom (Index n) ->
   -- | The specific word associated with the requested address, if the current cycle is a read cycle
@@ -237,8 +235,6 @@ data IlaRM bitSizeA depth n = IlaRM
   -- ^ What buffer to read
   }
   deriving (Generic, NFDataX, Show)
-
-deriveSignalHasFields ''IlaRM
 
 {- | Read from memory mapped registers in the register map using the addresses selected from a
 wishbone packet
@@ -360,7 +356,7 @@ ilaWb ::
   IlaConfig dom ->
   -- | The ILA wishbone interface
   Circuit
-    (Wishbone dom Standard 32 (BitVector 32))
+    (Wishbone dom Standard 32 4)
     ()
 ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicates) = Circuit exposeIn
  where
@@ -481,7 +477,7 @@ ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicat
     -- it will return zero.
     readManager' ::
       -- \| The current WB packet
-      WishboneM2S 32 4 (BitVector 32) ->
+      WishboneM2S 32 4 ->
       -- \| The ila register map
       IlaRM (BitSize a) depth m ->
       -- \| The value the buffer is currently pointing at
@@ -509,7 +505,7 @@ ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicat
       -- \| The data to reply with (if in a read cycle)
       BitVector 32 ->
       -- \| The wishbone response
-      WishboneS2M (BitVector 32)
+      WishboneS2M 4
     reply inCyc dat =
       WishboneS2M
         { readData = dat
