@@ -10,7 +10,7 @@ pub struct TextPromptState<T> {
     pub input: String,
     /// The location of the cursor within the buffer, note that this is NOT the location on screen!
     pub cursor: usize,
-    /// The calculated offset the curser has in relation to the on screen text
+    /// The calculated offset the cursor has in relation to the on screen text
     pub cursor_offset: usize,
     /// A number indicating how many characters should be skipped before displaying visible text on
     /// screen

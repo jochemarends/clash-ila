@@ -39,9 +39,9 @@ trait PredicatePage {
     fn navigate(&self, state: &mut State, event: &Event);
 }
 
-/// An enum for determining in which base a user wrote numeric inputs too
+/// An enum for determining in which base a user wrote numeric inputs to
 ///
-/// This is indicates by the prefix of the number, if the number has no prefix it is assumed to be
+/// This is indicated by the prefix of the number, if the number has no prefix it is assumed to be
 /// base-10 (Decimal)
 #[derive(Debug, Clone, Copy)]
 pub enum NumericState {
@@ -360,7 +360,7 @@ pub enum PredicateEventResponse {
     /// Close the program
     QuitProgram,
     /// Return to the main menu and display a message in the log
-    /// The bool indicates wether or not changes to the ILA configuration have been made
+    /// The bool indicates whether or not changes to the ILA configuration have been made
     MainMenu((String, bool)),
     /// Do nothing, remain in the predicate UI
     Nothing,

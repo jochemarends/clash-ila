@@ -30,7 +30,7 @@ enum Subcommands {
     Monitor(MonitorArgs),
     /// Lists all serial ports available
     List,
-    /// Communicate directly communicate with the ILA by writing to registers
+    /// Communicate directly with the ILA by writing to registers
     Register(RegisterArgs),
     /// Reads out the memory of the ILA and exports it to a file format
     ///
@@ -50,7 +50,7 @@ fn main() {
             let ports = match serialport::available_ports() {
                 Ok(ports) => ports,
                 Err(err) => {
-                    println!("Unable to qeury serial port information;");
+                    println!("Unable to query serial port information;");
                     println!("Kind: {:?}", err.kind);
                     println!("Reason: {}", err.description);
                     panic!("Unable to query serial port information.")

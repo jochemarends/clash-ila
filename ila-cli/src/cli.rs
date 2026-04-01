@@ -31,12 +31,12 @@ pub trait ParseSubcommand {
 ///
 /// # Panics
 ///
-/// Panics if the user provided an incorrect path or other IO errors accure
+/// Panics if the user provided an incorrect path or other IO errors occur
 pub fn find_specified_port(check: &Path, baud: u32) -> Box<dyn SerialPort> {
     let ports = match serialport::available_ports() {
         Ok(ports) => ports,
         Err(err) => {
-            println!("Unable to qeury serial port information;");
+            println!("Unable to query serial port information;");
             println!("Kind: {:?}", err.kind);
             println!("Reason: {}", err.description);
             panic!("Unable to query serial port information.")

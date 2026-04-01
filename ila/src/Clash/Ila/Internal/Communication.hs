@@ -25,7 +25,7 @@ uartDf ::
   SNat baud ->
   -- | The UART circuit, a small wrapper around default uart to make it use Df instead of raw signals
   -- The inputs are: transmission byte, rx bit
-  -- The outputs are: recieved byte, tx bit
+  -- The outputs are: received byte, tx bit
   Circuit
     (Df dom (BitVector 8), CSignal dom Bit)
     (CSignal dom (Maybe (BitVector 8)), CSignal dom Bit)
