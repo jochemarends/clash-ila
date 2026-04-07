@@ -71,6 +71,13 @@ enum KeyResponse {
     AppliedChanges,
 }
 
+enum ExportMode<W: std::io::Write> {
+    /// Write each cluster to a new resource
+    Clobber(Box<dyn Iterator<Item = VcdWriter<W>>>),
+    /// Write multiple clusters to the same resource. It does truncate the file on first cluster.
+    Append(VcdWriter<W>),
+}
+
 /// A TUI session
 ///
 /// This struct owns the TUI and once it goes out of scope, so will the TUI
@@ -103,8 +110,7 @@ pub struct TuiSession<'a> {
     auto_reset: bool,
     /// The connected device path
     device_path: String,
-    // The path to write captured samples, if provided
-    vcd_writer: Option<VcdWriter<std::io::BufWriter<std::fs::File>>>,
+    export_mode: Option<ExportMode<std::io::BufWriter<std::fs::File>>>,
 }
 
 impl<'a> TuiSession<'a> {
@@ -118,7 +124,8 @@ impl<'a> TuiSession<'a> {
         execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
 
-        let vcd_writer = export_path
+        // Only support the append mode for now.
+        let export_mode = export_path
             .map(|path| {
                 std::fs::File::options()
                     .read(true)
@@ -127,15 +134,18 @@ impl<'a> TuiSession<'a> {
                     .truncate(true)
                     .open(path)
                     .map(|file| {
-                        let writer = std::io::BufWriter::new(file);
+                        let file = std::io::BufWriter::new(file);
 
-                        let mut vcd_writer_config = VcdWriterConfig::with_module(&config.toplevel);
+                        let vcd_writer =
+                            config.signals
+                                .iter()
+                                .fold(VcdWriterConfig::with_module(&config.toplevel), |mut config, signal| {
+                                    config.add_wire(&signal.name, signal.width);
+                                    config
+                                })
+                                .writer(file);
 
-                        for signal in &config.signals {
-                            vcd_writer_config.add_wire(&signal.name, signal.width);
-                        }
-
-                        vcd_writer_config.writer(writer)
+                        ExportMode::Append(vcd_writer)
                     })
             })
             .transpose()?;
@@ -152,7 +162,7 @@ impl<'a> TuiSession<'a> {
             last_trigger_check: Instant::now(),
             auto_reset: false,
             device_path: device_path.display().to_string(),
-            vcd_writer,
+            export_mode,
         })
     }
 
@@ -329,8 +339,8 @@ impl<'a> TuiSession<'a> {
                     let indices: Vec<u32> = (0_u32..self.sample_count).collect();
                     match perform_buffer_reads(tx_port, self.config, 0_u32..self.sample_count) {
                         Ok(RegisterOutput::BufferContent(cluster)) => {
-                            if let Some(ref mut vcd_writer) = &mut self.vcd_writer {
-                                let _ = vcd_writer.try_write_cluster(&cluster);
+                            if let Some(ExportMode::Append(ref mut writer)) = &mut self.export_mode {
+                                let _ = writer.try_write_cluster(&cluster);
                             }
                             self.captured.push(cluster);
                         }
@@ -544,8 +554,8 @@ impl<'a> TuiSession<'a> {
                 if should_sample && !last_should_sample {
                     match perform_buffer_reads(&mut tx_port, self.config, 0_u32..self.sample_count) {
                         Ok(RegisterOutput::BufferContent(cluster)) => {
-                            if let Some(ref mut vcd_writer) = &mut self.vcd_writer {
-                                let _ = vcd_writer.try_write_cluster(&cluster);
+                            if let Some(ExportMode::Append(ref mut writer)) = &mut self.export_mode {
+                                let _ = writer.try_write_cluster(&cluster);
                             }
                             self.captured.push(cluster)
                         }
