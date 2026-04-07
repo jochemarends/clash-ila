@@ -216,6 +216,9 @@ pub struct TuiArgs {
 
     #[arg(short, long, default_value_t = 115200, help = "Sets baud rate")]
     baud: u32,
+
+    #[arg(long, help = "Path to write captured samples to as VCD")]
+    export: Option<PathBuf>,
 }
 
 impl ParseSubcommand for TuiArgs {
@@ -238,7 +241,7 @@ impl ParseSubcommand for TuiArgs {
             }
         }
 
-        let Ok(mut session) = TuiSession::new(&config, &self.port) else {
+        let Ok(mut session) = TuiSession::new(&config, &self.port, self.export.as_deref()) else {
             return;
         };
         session.main_loop(tx_port);

@@ -25,7 +25,7 @@ use crate::predicates::IlaPredicate;
 use crate::predicates::PredicateTarget;
 use crate::predicates_tui::State as PredState;
 use crate::ui::textinput::TextPromptState;
-use crate::vcd::write_to_vcd;
+use crate::vcd::{write_to_vcd, VcdWriter, VcdWriterConfig};
 
 /// The keybind text displayed in the TUI
 const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
@@ -103,18 +103,42 @@ pub struct TuiSession<'a> {
     auto_reset: bool,
     /// The connected device path
     device_path: String,
+    // The path to write captured samples, if provided
+    vcd_writer: Option<VcdWriter<std::io::BufWriter<std::fs::File>>>,
 }
 
 impl<'a> TuiSession<'a> {
     /// Create a new TUI session associated with a certain IlaConfig
     ///
     /// * `config` - The ILA configuration the TUI should use to properly communicate with the ILA
-    pub fn new(config: &'a IlaConfig, device_path: &Path) -> Result<TuiSession<'a>, io::Error> {
+    pub fn new(config: &'a IlaConfig, device_path: &Path, export_path: Option<&Path>) -> Result<TuiSession<'a>, io::Error> {
         enable_raw_mode()?;
 
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
+
+        let vcd_writer = export_path
+            .map(|path| {
+                std::fs::File::options()
+                    .read(true)
+                    .write(true)
+                    .create(true)
+                    .truncate(true)
+                    .open(path)
+                    .map(|file| {
+                        let writer = std::io::BufWriter::new(file);
+
+                        let mut vcd_writer_config = VcdWriterConfig::new();
+
+                        for signal in &config.signals {
+                            vcd_writer_config.add_wire(&signal.name, signal.width);
+                        }
+
+                        vcd_writer_config.writer(writer)
+                    })
+            })
+            .transpose()?;
 
         Ok(TuiSession {
             term: Terminal::new(backend)?,
@@ -128,6 +152,7 @@ impl<'a> TuiSession<'a> {
             last_trigger_check: Instant::now(),
             auto_reset: false,
             device_path: device_path.display().to_string(),
+            vcd_writer,
         })
     }
 
@@ -303,7 +328,12 @@ impl<'a> TuiSession<'a> {
                 } else {
                     let indices: Vec<u32> = (0_u32..self.sample_count).collect();
                     match perform_buffer_reads(tx_port, self.config, 0_u32..self.sample_count) {
-                        Ok(RegisterOutput::BufferContent(cluster)) => self.captured.push(cluster),
+                        Ok(RegisterOutput::BufferContent(cluster)) => {
+                            if let Some(ref mut vcd_writer) = &mut self.vcd_writer {
+                                let _ = vcd_writer.write_cluster(&cluster);
+                            }
+                            self.captured.push(cluster);
+                        }
                         Ok(_) => self
                             .log
                             .push("Unexpected output when reading buffer".into()),
@@ -513,7 +543,12 @@ impl<'a> TuiSession<'a> {
                 let should_sample = self.auto_sample && self.triggered && self.sample_count > 0;
                 if should_sample && !last_should_sample {
                     match perform_buffer_reads(&mut tx_port, self.config, 0_u32..self.sample_count) {
-                        Ok(RegisterOutput::BufferContent(cluster)) => self.captured.push(cluster),
+                        Ok(RegisterOutput::BufferContent(cluster)) => {
+                            if let Some(ref mut vcd_writer) = &mut self.vcd_writer {
+                                let _ = vcd_writer.write_cluster(&cluster);
+                            }
+                            self.captured.push(cluster)
+                        }
                         Ok(_) => self
                             .log
                             .push("Unexpected output when reading buffer".into()),
