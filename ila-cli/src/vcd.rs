@@ -214,24 +214,29 @@ impl<W: IoWrite> VcdWriter<W> {
             .max()
             .ok_or(std::io::ErrorKind::InvalidData)?;
 
-        for t in (self.time..).take(max_sample_count) {
-            self.inner.timestamp(t as u64)?;
+        for index in 0..max_sample_count {
+            self.inner.timestamp(index as u64)?;
 
-            for (index, wire) in self.config.wires.iter().enumerate() {
-                if let Some(signal) = signals.cluster.get(index) {
-                    let current_vector = signal
-                        .samples
-                        .get(t)
-                        .ok_or(std::io::ErrorKind::InvalidData)?
-                        .iter()
+            for (wire, signal) in self.config.wires.iter().zip(&signals.cluster) {
+                // If a sample exists, write it as VCD; otherwise, write an unknown value
+                if let Some(sample) = signal.samples.get(index) {
+                    let current_vector = sample.iter()
                         .map(|b| b.then_some(VcdValue::V1).unwrap_or(VcdValue::V0));
 
                     self.inner.change_vector(wire.id, current_vector)?;
+                } else {
+                    self.inner.change_vector(wire.id, wire.unknown())?;
                 }
             }
         }
+
         self.time += max_sample_count;
+        self.inner.timestamp(self.time as u64)?;
 
         Ok(())
+    }
+
+    pub fn flush(&mut self) -> IoResult<()> {
+        self.inner.flush()
     }
 }
