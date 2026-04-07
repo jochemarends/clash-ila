@@ -1,6 +1,5 @@
 use std::{io::Result as IoResult, io::Write as IoWrite, path::Path};
 use vcd::{IdCode, SimulationCommand, Value as VcdValue};
-use std::iter::zip;
 
 use crate::{communication::{Signal, SignalCluster}, config::IlaConfig};
 
@@ -102,19 +101,19 @@ pub fn write_to_vcd<P: AsRef<Path>>(
     Ok(())
 }
 
-/// Describes the width and the name of a VCD variable, which needed for the variable definition
-/// section
+/// Contains everything needed to define a VCD variable of type "wire"
 #[derive(Clone)]
 struct VcdWire {
     width: usize,
     name: String,
+    id: IdCode,
 }
 
 impl VcdWire {
     /// A bit vector consisting of unknowns, used in the wire definition and at the end of the
     /// signal if the signal is shorter than others
-    fn unknown(&self) -> VcdBitVec {
-        vec![VcdValue::X; self.width]
+    fn unknown(&self) -> impl Iterator<Item = VcdValue> {
+        std::iter::repeat(VcdValue::X).take(self.width)
     }
 }
 
@@ -128,22 +127,18 @@ pub struct VcdWriterConfig {
 }
 
 impl VcdWriterConfig {
-    pub fn new() -> Self {
+    pub fn with_module(module: impl Into<String>) -> Self {
         Self {
             wires: Vec::new(),
-            module: String::new(),
+            module: module.into(),
         }
-    }
-
-    pub fn module(&mut self, name: impl Into<String>) -> &mut Self {
-        self.module = name.into();
-        self
     }
 
     pub fn add_wire(&mut self, name: &str, width: usize) -> &mut Self {
         self.wires.push(VcdWire {
             name: name.to_owned(),
             width: width,
+            id: self.next_wire_id(),
         });
 
         self
@@ -152,12 +147,18 @@ impl VcdWriterConfig {
     pub fn writer<W: IoWrite>(self, writer: W) -> VcdWriter<W> {
         VcdWriter::new(writer, self)
     }
+
+    fn next_wire_id(&self) -> IdCode {
+        self.wires.first()
+            .map(|wire| wire.id.next())
+            .unwrap_or(IdCode::FIRST)
+    }
 }
 
 pub struct VcdWriter<W: IoWrite> {
     inner: vcd::Writer<W>,
     config: VcdWriterConfig,
-    time: u64,
+    time: usize,
 }
 
 impl<W: IoWrite> VcdWriter<W> {
@@ -172,7 +173,7 @@ impl<W: IoWrite> VcdWriter<W> {
     /// Writes everything that should precede the data dump section of a VCD
     fn write_preamble(&mut self) -> IoResult<()> {
         for wire in &self.config.wires {
-            self.inner.add_wire(wire.width as u32, &wire.name)?;
+            self.inner.var_def(vcd::VarType::Wire, wire.width as u32, wire.id, &wire.name, None)?;
         }
 
         // Header
@@ -186,15 +187,15 @@ impl<W: IoWrite> VcdWriter<W> {
 
         // Initialize all variables to unknown
         self.inner.begin(SimulationCommand::Dumpvars)?;
-        for (wire, id) in zip(&self.config.wires, Self::wire_ids()) {
-            self.inner.change_vector(id, wire.unknown())?;
+        for wire in &self.config.wires {
+            self.inner.change_vector(wire.id, wire.unknown())?;
         }
         self.inner.end()?;
 
         Ok(())
     }
 
-    pub fn write_cluster(&mut self, signals: &SignalCluster) -> IoResult<()> {
+    pub fn try_write_cluster(&mut self, signals: &SignalCluster) -> IoResult<()> {
         if signals.cluster.len() != self.config.wires.len() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -203,7 +204,7 @@ impl<W: IoWrite> VcdWriter<W> {
         }
 
         if self.time == 0 {
-            &self.write_preamble()?;
+            self.write_preamble()?;
         }
 
         let max_sample_count = signals
@@ -213,34 +214,24 @@ impl<W: IoWrite> VcdWriter<W> {
             .max()
             .ok_or(std::io::ErrorKind::InvalidData)?;
 
-        for t in 0..max_sample_count {
+        for t in (self.time..).take(max_sample_count) {
             self.inner.timestamp(t as u64)?;
 
-            for (index, (signal, id)) in self.config.wires.iter().zip(Self::wire_ids()).enumerate() {
-                let current_vector = signals.cluster.get(index)
-                    .map(|signal| {
-                        signal.samples
-                            .iter()
-                            .map(|v| {
-                                v.iter()
-                                    .map(|b| b.then_some(VcdValue::V1).unwrap_or(VcdValue::V0))
-                                    .collect::<Vec<_>>()
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .ok_or(std::io::ErrorKind::InvalidData)?
-                    .get(t)
-                    .unwrap_or(&signal.unknown())
-                    .to_owned();
+            for (index, wire) in self.config.wires.iter().enumerate() {
+                if let Some(signal) = signals.cluster.get(index) {
+                    let current_vector = signal
+                        .samples
+                        .get(t)
+                        .ok_or(std::io::ErrorKind::InvalidData)?
+                        .iter()
+                        .map(|b| b.then_some(VcdValue::V1).unwrap_or(VcdValue::V0));
 
-                self.inner.change_vector(id, current_vector)?;
+                    self.inner.change_vector(wire.id, current_vector)?;
+                }
             }
         }
+        self.time += max_sample_count;
 
         Ok(())
-    }
-
-    fn wire_ids() -> impl Iterator<Item = IdCode> {
-        std::iter::successors(Some(IdCode::FIRST), |&id| Some(id.next()))
     }
 }

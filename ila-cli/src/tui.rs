@@ -25,7 +25,7 @@ use crate::predicates::IlaPredicate;
 use crate::predicates::PredicateTarget;
 use crate::predicates_tui::State as PredState;
 use crate::ui::textinput::TextPromptState;
-use crate::vcd::{write_to_vcd, VcdWriter, VcdWriterConfig};
+use crate::vcd::{VcdWriter, VcdWriterConfig, write_to_vcd};
 
 /// The keybind text displayed in the TUI
 const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
@@ -129,7 +129,7 @@ impl<'a> TuiSession<'a> {
                     .map(|file| {
                         let writer = std::io::BufWriter::new(file);
 
-                        let mut vcd_writer_config = VcdWriterConfig::new();
+                        let mut vcd_writer_config = VcdWriterConfig::with_module(&config.toplevel);
 
                         for signal in &config.signals {
                             vcd_writer_config.add_wire(&signal.name, signal.width);
@@ -330,7 +330,7 @@ impl<'a> TuiSession<'a> {
                     match perform_buffer_reads(tx_port, self.config, 0_u32..self.sample_count) {
                         Ok(RegisterOutput::BufferContent(cluster)) => {
                             if let Some(ref mut vcd_writer) = &mut self.vcd_writer {
-                                let _ = vcd_writer.write_cluster(&cluster);
+                                let _ = vcd_writer.try_write_cluster(&cluster);
                             }
                             self.captured.push(cluster);
                         }
@@ -545,7 +545,7 @@ impl<'a> TuiSession<'a> {
                     match perform_buffer_reads(&mut tx_port, self.config, 0_u32..self.sample_count) {
                         Ok(RegisterOutput::BufferContent(cluster)) => {
                             if let Some(ref mut vcd_writer) = &mut self.vcd_writer {
-                                let _ = vcd_writer.write_cluster(&cluster);
+                                let _ = vcd_writer.try_write_cluster(&cluster);
                             }
                             self.captured.push(cluster)
                         }
