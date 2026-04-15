@@ -124,31 +124,27 @@ impl<'a> TuiSession<'a> {
         execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
 
-        // Only support the append mode for now.
-        let export_mode = export_path
-            .map(|path| {
-                std::fs::File::options()
-                    .read(true)
-                    .write(true)
-                    .create(true)
-                    .truncate(true)
-                    .open(path)
-                    .map(|file| {
-                        let file = std::io::BufWriter::new(file);
+        let export_mode = if let Some(path) = export_path {
+            let file = std::fs::File::options()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(path)?;
 
-                        let vcd_writer =
-                            config.signals
-                                .iter()
-                                .fold(VcdWriterConfig::with_module(&config.toplevel), |mut config, signal| {
-                                    config.add_wire(&signal.name, signal.width);
-                                    config
-                                })
-                                .writer(file);
+            let writer = std::io::BufWriter::new(file);
 
-                        ExportMode::Append(vcd_writer)
-                    })
-            })
-            .transpose()?;
+            let mut vcd_config = VcdWriterConfig::with_module(&config.toplevel);
+            for signal in &config.signals {
+                vcd_config.add_wire(&signal.name, signal.width);
+            }
+
+            let vcd_writer = vcd_config.writer(writer);
+
+            Some(ExportMode::Append(vcd_writer))
+        } else {
+            None
+        };
 
         Ok(TuiSession {
             term: Terminal::new(backend)?,
@@ -340,7 +336,9 @@ impl<'a> TuiSession<'a> {
                     match perform_buffer_reads(tx_port, self.config, 0_u32..self.sample_count) {
                         Ok(RegisterOutput::BufferContent(cluster)) => {
                             if let Some(ExportMode::Append(ref mut writer)) = &mut self.export_mode {
-                                let _ = writer.try_write_cluster(&cluster);
+                                if writer.try_write_cluster(&cluster).is_err() || writer.flush().is_err() {
+                                    self.log.push("Error when exporting VCD".into());
+                                }
                             }
                             self.captured.push(cluster);
                         }
@@ -555,7 +553,9 @@ impl<'a> TuiSession<'a> {
                     match perform_buffer_reads(&mut tx_port, self.config, 0_u32..self.sample_count) {
                         Ok(RegisterOutput::BufferContent(cluster)) => {
                             if let Some(ExportMode::Append(ref mut writer)) = &mut self.export_mode {
-                                let _ = writer.try_write_cluster(&cluster);
+                                if writer.try_write_cluster(&cluster).is_err() || writer.flush().is_err() {
+                                    self.log.push("Error when exporting VCD".into());
+                                }
                             }
                             self.captured.push(cluster)
                         }

@@ -149,9 +149,11 @@ impl VcdWriterConfig {
     }
 
     fn next_wire_id(&self) -> IdCode {
-        self.wires.first()
-            .map(|wire| wire.id.next())
-            .unwrap_or(IdCode::FIRST)
+        if let Some(wire) = self.wires.last() {
+            wire.id.next()
+        } else {
+            IdCode::FIRST
+        }
     }
 }
 
@@ -172,15 +174,11 @@ impl<W: IoWrite> VcdWriter<W> {
 
     /// Writes everything that should precede the data dump section of a VCD
     fn write_preamble(&mut self) -> IoResult<()> {
-        for wire in &self.config.wires {
-            self.inner.var_def(vcd::VarType::Wire, wire.width as u32, wire.id, &wire.name, None)?;
-        }
-
         // Header
         self.inner.timescale(1, vcd::TimescaleUnit::US)?;
         self.inner.add_module(&self.config.module)?;
         for wire in &self.config.wires {
-            self.inner.add_wire(wire.width as u32, &wire.name)?;
+            self.inner.var_def(vcd::VarType::Wire, wire.width as u32, wire.id, &wire.name, None)?;
         }
         self.inner.upscope()?;
         self.inner.enddefinitions()?;
@@ -215,10 +213,10 @@ impl<W: IoWrite> VcdWriter<W> {
             .ok_or(std::io::ErrorKind::InvalidData)?;
 
         for index in 0..max_sample_count {
-            self.inner.timestamp(index as u64)?;
+            let t = self.time + index;
+            self.inner.timestamp(t as u64)?;
 
             for (wire, signal) in self.config.wires.iter().zip(&signals.cluster) {
-                // If a sample exists, write it as VCD; otherwise, write an unknown value
                 if let Some(sample) = signal.samples.get(index) {
                     let current_vector = sample.iter()
                         .map(|b| b.then_some(VcdValue::V1).unwrap_or(VcdValue::V0));
