@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::{Read, Write, Seek, Result as IoResult};
 use std::path::Path;
 use std::time::Instant;
 use std::{io, time::Duration};
@@ -9,6 +9,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::layout::Flex;
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Text};
 use ratatui::{
@@ -26,6 +27,7 @@ use crate::predicates::PredicateTarget;
 use crate::predicates_tui::State as PredState;
 use crate::ui::textinput::TextPromptState;
 use crate::vcd::{VcdWriter, VcdWriterConfig, write_to_vcd};
+use crate::auto_export_tui::{AutoExportMode, AutoExportOptions, State as AutoExportState};
 
 /// The keybind text displayed in the TUI
 const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
@@ -37,6 +39,7 @@ const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
   r      ---   Re-arm trigger
   a      ---   Toggle auto trigger re-arm
   v      ---   Write signals to VCD dump
+  e      ---   Toggle auto-export
 "#;
 
 /// The reason to prompt the user with, mostly important to decide what to do next after a user has
@@ -58,6 +61,7 @@ enum TuiState<'a> {
     InPrompt(TextPromptState<PromptReason>),
     /// Manages the trigger predicates
     Predicates(PredState<'a>),
+    AutoExport(AutoExportState),
 }
 
 /// The response of the TUI key event handler
@@ -71,11 +75,57 @@ enum KeyResponse {
     AppliedChanges,
 }
 
-enum ExportMode<W: std::io::Write> {
-    /// Write each cluster to a new resource
-    Clobber(Box<dyn Iterator<Item = VcdWriter<W>>>),
-    /// Write multiple clusters to the same resource. It does truncate the file on first cluster.
-    Append(VcdWriter<W>),
+struct VcdExportSession {
+    options: AutoExportOptions,
+    writer: VcdWriter<std::io::BufWriter<std::fs::File>>,
+    preamble_written: bool,
+}
+
+impl VcdExportSession {
+    fn new(options: AutoExportOptions, config: &IlaConfig) -> IoResult<Self> {
+        let file = std::fs::File::options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&options.file_name)?;
+
+        let writer = std::io::BufWriter::new(file);
+
+        let mut vcd_config = VcdWriterConfig::with_module(config.toplevel.clone());
+        for signal in &config.signals {
+            vcd_config.add_wire(signal.name.clone(), signal.width);
+        }
+
+        Ok(Self {
+            options,
+            writer: vcd_config.writer(writer),
+            preamble_written: false,
+        })
+    }
+}
+
+impl VcdExportSession {
+    fn export_cluster(&mut self, signals: &SignalCluster) -> IoResult<()> {
+        match self.options.mode {
+            AutoExportMode::Truncate => {
+                let file = self.writer.writer_mut().get_mut();
+                file.set_len(0)?;
+                file.rewind()?;
+                self.writer.write_preamble()?;
+                self.preamble_written = true;
+            },
+            AutoExportMode::Append => {
+                if !self.preamble_written {
+                    self.writer.write_preamble()?;
+                    self.preamble_written = true;
+                }
+            }
+        };
+
+        self.writer.write_cluster(signals)?;
+        self.writer.flush()
+    }
 }
 
 /// A TUI session
@@ -110,41 +160,19 @@ pub struct TuiSession<'a> {
     auto_reset: bool,
     /// The connected device path
     device_path: String,
-    export_mode: Option<ExportMode<std::io::BufWriter<std::fs::File>>>,
+    auto_export_session: Option<VcdExportSession>,
 }
 
 impl<'a> TuiSession<'a> {
     /// Create a new TUI session associated with a certain IlaConfig
     ///
     /// * `config` - The ILA configuration the TUI should use to properly communicate with the ILA
-    pub fn new(config: &'a IlaConfig, device_path: &Path, export_path: Option<&Path>) -> Result<TuiSession<'a>, io::Error> {
+    pub fn new(config: &'a IlaConfig, device_path: &Path) -> Result<TuiSession<'a>, io::Error> {
         enable_raw_mode()?;
 
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
-
-        let export_mode = if let Some(path) = export_path {
-            let file = std::fs::File::options()
-                .read(true)
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(path)?;
-
-            let writer = std::io::BufWriter::new(file);
-
-            let mut vcd_config = VcdWriterConfig::with_module(&config.toplevel);
-            for signal in &config.signals {
-                vcd_config.add_wire(&signal.name, signal.width);
-            }
-
-            let vcd_writer = vcd_config.writer(writer);
-
-            Some(ExportMode::Append(vcd_writer))
-        } else {
-            None
-        };
 
         Ok(TuiSession {
             term: Terminal::new(backend)?,
@@ -158,7 +186,7 @@ impl<'a> TuiSession<'a> {
             last_trigger_check: Instant::now(),
             auto_reset: false,
             device_path: device_path.display().to_string(),
-            export_mode,
+            auto_export_session: None,
         })
     }
 
@@ -289,7 +317,20 @@ impl<'a> TuiSession<'a> {
             TuiState::InPrompt(_) => self.render_main(),
             TuiState::Predicates(state) => {
                 state.render(&mut self.term);
-            }
+            },
+            TuiState::AutoExport(state) => {
+                let rect = self.term.get_frame().area();
+
+                let [h_centered] = Layout::horizontal([Constraint::Length(10)])
+                    .flex(Flex::Center)
+                    .areas(rect);
+
+                let [centered] = Layout::vertical([Constraint::Length(10)])
+                    .flex(Flex::Center)
+                    .areas(h_centered);
+
+                state.render(centered, &mut self.term);
+            },
         }
     }
 
@@ -335,9 +376,9 @@ impl<'a> TuiSession<'a> {
                     let indices: Vec<u32> = (0_u32..self.sample_count).collect();
                     match perform_buffer_reads(tx_port, self.config, 0_u32..self.sample_count) {
                         Ok(RegisterOutput::BufferContent(cluster)) => {
-                            if let Some(ExportMode::Append(ref mut writer)) = &mut self.export_mode {
-                                if writer.try_write_cluster(&cluster).is_err() || writer.flush().is_err() {
-                                    self.log.push("Error when exporting VCD".into());
+                            if let Some(ref mut session) = self.auto_export_session {
+                                if session.export_cluster(&cluster).is_err() {
+                                    self.log.push("Error when exporting VCD".to_string())
                                 }
                             }
                             self.captured.push(cluster);
@@ -389,7 +430,15 @@ impl<'a> TuiSession<'a> {
                     PromptReason::SaveVcd,
                 ));
                 KeyResponse::Nothing
-            }
+            },
+            (TuiState::Main, KeyCode::Char('e'), _) => {
+                if self.auto_export_session.is_some() {
+                    self.auto_export_session = None;
+                } else {
+                    self.state = TuiState::AutoExport(AutoExportState::new());
+                }
+                KeyResponse::Nothing
+            },
             (TuiState::InPrompt(_), KeyCode::Esc, _) => {
                 self.log.push("Cancelled save".to_string());
                 self.state = TuiState::Main;
@@ -495,6 +544,27 @@ impl<'a> TuiSession<'a> {
                     }
                 }
 
+                if let TuiState::AutoExport(state) = &mut self.state {
+                    if let Ok(ref event) = raw_event {
+                        let stop_program = state.handle_event(event);
+                        self.render();
+
+                        match stop_program {
+                            crate::auto_export_tui::AutoExportEventResponse::QuitProgram => return,
+                            crate::auto_export_tui::AutoExportEventResponse::MainMenu { message: log, options } => {
+                                self.state = TuiState::Main;
+                                self.log.push(log);
+                                if let Some(options) = options {
+                                    if let Ok(session) = VcdExportSession::new(options, &self.config) {
+                                        self.auto_export_session = Some(session);
+                                    }
+                                }
+                            }
+                            crate::auto_export_tui::AutoExportEventResponse::Nothing => continue,
+                        }
+                    }
+                }
+
                 let event = match raw_event {
                     Ok(TuiEvent::Key(key)) => key,
                     Ok(TuiEvent::Resize(..)) => {
@@ -552,12 +622,12 @@ impl<'a> TuiSession<'a> {
                 if should_sample && !last_should_sample {
                     match perform_buffer_reads(&mut tx_port, self.config, 0_u32..self.sample_count) {
                         Ok(RegisterOutput::BufferContent(cluster)) => {
-                            if let Some(ExportMode::Append(ref mut writer)) = &mut self.export_mode {
-                                if writer.try_write_cluster(&cluster).is_err() || writer.flush().is_err() {
-                                    self.log.push("Error when exporting VCD".into());
+                            if let Some(ref mut session) = self.auto_export_session {
+                                if session.export_cluster(&cluster).is_err() {
+                                    self.log.push("Error when exporting VCD".to_string())
                                 }
                             }
-                            self.captured.push(cluster)
+                            self.captured.push(cluster);
                         }
                         Ok(_) => self
                             .log
