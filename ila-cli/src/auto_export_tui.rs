@@ -1,27 +1,35 @@
+//! TUI state and logic for auto-exporting readings as VCD
+
 use std::io::Stdout;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
+use ratatui::widgets::{Borders, Padding, Paragraph, Wrap};
 use ratatui::{layout::Flex, prelude::*, widgets::Block};
 
 use crate::ui::textinput::TextPromptState;
 use crate::ui::listbox::Listbox;
 
-/// Represents the different modes for auto-exporting as VCD.
+const HELP_MESSAGE: &str = r#"UP and DOWN to navigate between elements
+ENTER to save changes, ESC to discard"#;
+
+/// Represents the different modes for auto-exporting as VCD
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum AutoExportMode {
     /// Before writing each [`SignalCluster`], truncates the file, then writes the VCD header,
-    /// variable definition section, and variable initialization section.
+    /// variable definition section, and variable initialization section
     Truncate,
     /// Writes the VCD header, variable definition section, and variable initialization section
-    /// before writing the first [`SignalCluster`]. Subsequent [`SignalCluster`]s are appended.
+    /// before writing the first [`SignalCluster`]. Subsequent [`SignalCluster`]s are appended
     Append,
 }
 
-/// Auto-export options.
-#[derive(Debug, Clone)]
-pub struct AutoExportOptions {
-    pub file_name: String,
-    pub mode: AutoExportMode,
+impl std::fmt::Display for AutoExportMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            AutoExportMode::Truncate => "TRUNCATE",
+            AutoExportMode::Append => "APPEND",
+        })
+    }
 }
 
 impl TryFrom<u32> for AutoExportMode {
@@ -36,26 +44,34 @@ impl TryFrom<u32> for AutoExportMode {
     }
 }
 
-/// Represents the focused UI element.
+/// Auto-export options
+#[derive(Debug, Clone)]
+pub struct AutoExportOptions {
+    pub file_name: String,
+    pub mode: AutoExportMode,
+}
+
+/// Represents the focused UI element
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum Selected {
     FileName,
     Mode,
 }
 
-/// The response of the auto-export UI on input events.
+/// The response of the UI to a terminal event
 pub enum AutoExportEventResponse {
     /// Close the program
     QuitProgram,
-    /// Return to the main menu.
+    /// Return to the main menu
     ///
-    /// * `message` - Message to display in the log of the main menu.
-    /// * `options` - The confirmed export options, or `None` if the prompt was cancelled.
+    /// * `message` - Message to append to the log of the main menu
+    /// * `options` - Confirmed export options, or `None` if the prompt was cancelled
     MainMenu{ message: String, options: Option<AutoExportOptions> },
+    /// Do nothing
     Nothing,
 }
 
-/// State of the auto-export UI.
+/// State of the auto-export UI
 #[derive(Debug, Clone)]
 pub struct State {
     file_name_state: TextPromptState<()>,
@@ -64,55 +80,83 @@ pub struct State {
 }
 
 impl State {
+    /// Create a new state for this TUI page
     pub fn new() -> State {
         Self {
             file_name_state: TextPromptState::new(Some("dump.vcd"), ()),
-            mode_state: Listbox::new(vec!["TRUNCATE", "APPEND"], 0),
+            mode_state: Listbox::new(
+                vec![
+                    format!("{}" , AutoExportMode::Truncate),
+                    format!("{}" , AutoExportMode::Append),
+                ],
+                0,
+            ),
             selected: Selected::FileName,
         }
     }
 
-    pub fn render(&mut self, area: Rect, terminal: &mut Terminal<CrosstermBackend<Stdout>>) {
+    /// Renders the TUI
+    pub fn render(&mut self, terminal: &mut Terminal<CrosstermBackend<Stdout>>) {
         let _ = terminal.draw(|f| {
-            let main_block = Block::bordered()
-                .title("Auto-export");
+            let help_msg = Paragraph::new(HELP_MESSAGE)
+                .wrap(Wrap { trim: true })
+                .block(Block::bordered().title("Keybinds"));
 
-            f.render_widget(&main_block, area);
+            let [main_area, help_message_area] = Layout::vertical([
+                Constraint::Fill(1),
+                Constraint::Length(help_msg.line_count(f.area().width) as u16),
+            ])
+            .areas(f.area());
 
-            let layout = Layout::new(
-                    Direction::Vertical,
-                    [
-                        Constraint::Length(3),
-                        Constraint::Length(2),
-                    ],
-                )
+            f.render_widget(help_msg, help_message_area);
+
+            let main_block = Block::bordered().title("Auto-Export Options");
+
+            let modes_description = Paragraph::new("There are two auto-export modes: TRUNCATE keeps overwriting a file with the last captured buffer while APPEND writes all buffers sequentially to a file.")
+                .wrap(Wrap { trim: true });
+
+            // Account for borders
+            let modes_description_line_count = modes_description.line_count(f.area().width.saturating_sub(2)) as u16;
+
+            let [modes_description_area, file_name_area, mode_area] = Layout::vertical([
+                    Constraint::Length(modes_description_line_count),
+                    Constraint::Length(3),
+                    Constraint::Length(1 + self.mode_state.items().len() as u16),
+                ])
                 .flex(Flex::Start)
-                .spacing(0)
-                .split(area);
+                .spacing(1)
+                .areas(main_block.inner(main_area));
 
-            {
-                let area = main_block.inner(layout[0]);
-                let borders = Block::bordered().title("file name");
-                let border_area = Rect::new(area.x, area.y, area.width, 3);
-                let input_area = Rect::new(area.x + 2, area.y + 1, area.width - 1, 1);
-                let input_select = Rect::new(area.x, area.y + 1, 1, 1);
+            f.render_widget(&main_block, main_area);
 
-                f.render_widget(borders, border_area);
+            f.render_widget(&modes_description, modes_description_area);
 
-                let element_active = self.selected == Selected::FileName;
-                self.file_name_state.render(input_area, f, element_active);
+            let file_name_block = Block::bordered().title("File Name");
+            let file_name_inner_area = file_name_block.clone().padding(Padding::left(1)).inner(file_name_area);
 
-                if self.selected == Selected::FileName {
-                    f.render_widget(">", input_select);
-                }
+            f.render_widget(file_name_block, file_name_area);
+
+            if self.selected == Selected::FileName {
+                self.file_name_state.render(file_name_inner_area, f, true);
+                let block = Block::new().borders(Borders::TOP | Borders::BOTTOM);
+                let inner_area = block.inner(file_name_area);
+                f.render_widget("> ", inner_area);
+            } else {
+                self.file_name_state.render(file_name_inner_area, f, false);
             }
 
-            {
-                self.mode_state.render(main_block.inner(layout[1]), f.buffer_mut());
-            }
+            let [mode_title_area, mode_state_area] = Layout::vertical([
+                Constraint::Length(1),
+                Constraint::Length(self.mode_state.items().len() as u16)
+            ])
+            .areas(mode_area);
+
+            f.render_widget("Auto-Export Mode", mode_title_area);
+            self.mode_state.render(mode_state_area, f.buffer_mut());
         });
     }
 
+    /// Handle TUI events
     pub fn handle_event(&mut self, event: &Event) -> AutoExportEventResponse {
         match event {
             Event::Key(KeyEvent {
@@ -122,7 +166,10 @@ impl State {
             }) => AutoExportEventResponse::QuitProgram,
             Event::Key(KeyEvent {
                 code: KeyCode::Esc, ..
-            }) => AutoExportEventResponse::MainMenu { message: "Cancelled auto-export".into(), options: None },
+            }) => AutoExportEventResponse::MainMenu {
+                message: "Cancelled auto-export".into(),
+                options: None,
+            },
             Event::Key(KeyEvent {
                 code: KeyCode::Enter, ..
             }) => {
@@ -134,7 +181,10 @@ impl State {
                     return AutoExportEventResponse::Nothing;
                 };
 
-                AutoExportEventResponse::MainMenu { message: "Setup auto-export".into(), options: Some(AutoExportOptions { file_name, mode, }) }
+                AutoExportEventResponse::MainMenu {
+                    message: "Started an auto-export session".into(),
+                    options: Some(AutoExportOptions { file_name, mode, }),
+                }
             },
             _ => {
                 self.handle_input(event);

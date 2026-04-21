@@ -9,7 +9,6 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::layout::Flex;
 use ratatui::style::Stylize;
 use ratatui::text::{Line, Text};
 use ratatui::{
@@ -75,13 +74,17 @@ enum KeyResponse {
     AppliedChanges,
 }
 
-struct VcdExportSession {
+/// The state of an auto-export session
+struct AutoExportSession {
     options: AutoExportOptions,
     writer: VcdWriter<std::io::BufWriter<std::fs::File>>,
-    preamble_written: bool,
+    /// For VCD, whether the header, variable definition section, and the variable initialization
+    /// section should be written before writing data dumps.
+    should_write_preamble: bool,
 }
 
-impl VcdExportSession {
+impl AutoExportSession {
+    /// Construct a new auto-export session
     fn new(options: AutoExportOptions, config: &IlaConfig) -> IoResult<Self> {
         let file = std::fs::File::options()
             .read(true)
@@ -100,12 +103,12 @@ impl VcdExportSession {
         Ok(Self {
             options,
             writer: vcd_config.writer(writer),
-            preamble_written: false,
+            should_write_preamble: false,
         })
     }
 }
 
-impl VcdExportSession {
+impl AutoExportSession {
     fn export_cluster(&mut self, signals: &SignalCluster) -> IoResult<()> {
         match self.options.mode {
             AutoExportMode::Truncate => {
@@ -113,12 +116,12 @@ impl VcdExportSession {
                 file.set_len(0)?;
                 file.rewind()?;
                 self.writer.write_preamble()?;
-                self.preamble_written = true;
+                self.should_write_preamble = true;
             },
             AutoExportMode::Append => {
-                if !self.preamble_written {
+                if !self.should_write_preamble {
                     self.writer.write_preamble()?;
-                    self.preamble_written = true;
+                    self.should_write_preamble = true;
                 }
             }
         };
@@ -160,7 +163,7 @@ pub struct TuiSession<'a> {
     auto_reset: bool,
     /// The connected device path
     device_path: String,
-    auto_export_session: Option<VcdExportSession>,
+    auto_export_session: Option<AutoExportSession>,
 }
 
 impl<'a> TuiSession<'a> {
@@ -211,7 +214,7 @@ impl<'a> TuiSession<'a> {
             let info_layout = Layout::default()
                 .direction(layout::Direction::Vertical)
                 .margin(1)
-                .constraints([Constraint::Length(5), Constraint::Fill(1)])
+                .constraints([Constraint::Length(6), Constraint::Fill(1)])
                 .split(main_layout[1]);
 
             // Ensure the lines fit within the Paragraph's range
@@ -258,6 +261,13 @@ impl<'a> TuiSession<'a> {
                     match self.auto_sample {
                         true => "ENABLED".bold().green(),
                         false => "DISABLED".bold().red(),
+                    },
+                ]),
+                Line::from_iter([
+                    "An auto-export session is ".into(),
+                    match self.auto_export_session.is_some() {
+                        true => "RUNNING".bold().green(),
+                        false => "NOT RUNNING".bold().red(),
                     },
                 ]),
             ]));
@@ -319,17 +329,7 @@ impl<'a> TuiSession<'a> {
                 state.render(&mut self.term);
             },
             TuiState::AutoExport(state) => {
-                let rect = self.term.get_frame().area();
-
-                let [h_centered] = Layout::horizontal([Constraint::Length(10)])
-                    .flex(Flex::Center)
-                    .areas(rect);
-
-                let [centered] = Layout::vertical([Constraint::Length(10)])
-                    .flex(Flex::Center)
-                    .areas(h_centered);
-
-                state.render(centered, &mut self.term);
+                state.render(&mut self.term);
             },
         }
     }
@@ -377,8 +377,8 @@ impl<'a> TuiSession<'a> {
                     match perform_buffer_reads(tx_port, self.config, 0_u32..self.sample_count) {
                         Ok(RegisterOutput::BufferContent(cluster)) => {
                             if let Some(ref mut session) = self.auto_export_session {
-                                if session.export_cluster(&cluster).is_err() {
-                                    self.log.push("Error when exporting VCD".to_string())
+                                if let Err(err) = session.export_cluster(&cluster) {
+                                    self.log.push(format!("Error: {err}"));
                                 }
                             }
                             self.captured.push(cluster);
@@ -434,6 +434,7 @@ impl<'a> TuiSession<'a> {
             (TuiState::Main, KeyCode::Char('e'), _) => {
                 if self.auto_export_session.is_some() {
                     self.auto_export_session = None;
+                    self.log.push("Stopped auto-export session".to_string());
                 } else {
                     self.state = TuiState::AutoExport(AutoExportState::new());
                 }
@@ -551,13 +552,17 @@ impl<'a> TuiSession<'a> {
 
                         match stop_program {
                             crate::auto_export_tui::AutoExportEventResponse::QuitProgram => return,
-                            crate::auto_export_tui::AutoExportEventResponse::MainMenu { message: log, options } => {
+                            crate::auto_export_tui::AutoExportEventResponse::MainMenu { message: _log, options } => {
                                 self.state = TuiState::Main;
-                                self.log.push(log);
                                 if let Some(options) = options {
-                                    if let Ok(session) = VcdExportSession::new(options, &self.config) {
+                                    if let Ok(session) = AutoExportSession::new(options, &self.config) {
                                         self.auto_export_session = Some(session);
+                                        self.log.push("Started an auto-export session".to_string());
+                                    } else {
+                                        self.log.push("Failed to start auto-export session".to_string());
                                     }
+                                } else {
+                                    self.log.push("Cancelled auto-export".to_string());
                                 }
                             }
                             crate::auto_export_tui::AutoExportEventResponse::Nothing => continue,
@@ -623,8 +628,8 @@ impl<'a> TuiSession<'a> {
                     match perform_buffer_reads(&mut tx_port, self.config, 0_u32..self.sample_count) {
                         Ok(RegisterOutput::BufferContent(cluster)) => {
                             if let Some(ref mut session) = self.auto_export_session {
-                                if session.export_cluster(&cluster).is_err() {
-                                    self.log.push("Error when exporting VCD".to_string())
+                                if let Err(err) = session.export_cluster(&cluster) {
+                                    self.log.push(format!("Error: {err}"));
                                 }
                             }
                             self.captured.push(cluster);

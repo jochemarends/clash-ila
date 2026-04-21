@@ -46,7 +46,7 @@ fn unknown_bits(width: usize) -> impl Iterator<Item = vcd::Value> {
 ///
 /// ```
 /// use std::fs::File;
-/// use crate::vcd::::VcdWriterConfig;
+/// use crate::vcd::VcdWriterConfig;
 ///
 /// let file = File::create("dump.vcd").unwrap();
 ///
