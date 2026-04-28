@@ -458,6 +458,7 @@ data GenIla = GenIla
   , bufferSize :: Word32
   , hash :: Word32
   , signals :: [GenSignal]
+  , outputs :: [GenSignal]
   , triggerNames :: [String]
   }
   deriving (Generic, Show, ToJSON, Eq, Hashable)

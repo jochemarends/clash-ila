@@ -233,6 +233,8 @@ data IlaRM bitSizeA depth n = IlaRM
   -- ^ The compare value given to the capture predicate
   , wordIndex :: Index (bitSizeA `DivRU` 32)
   -- ^ What buffer to read
+  , outputBool :: Bool
+  -- ^ Test output to set
   }
   deriving (Generic, NFDataX, Show)
 
@@ -260,6 +262,7 @@ readIlaMM ::
 readIlaMM 0x0000_0000 0b0001 rm = Just . extend $ pack rm.capture
 readIlaMM 0x0000_0000 0b0010 rm = Just . extend . pack $ not rm.shouldSample
 readIlaMM 0x0000_0001 0b1111 rm = Just . resize $ pack rm.triggerPoint
+readIlaMM 0x0000_0002 0b0001 rm = Just $ resize $ pack rm.outputBool
 readIlaMM 0x0000_0003 0b0001 rm = Just . resize $ pack rm.triggerOperation
 readIlaMM 0x0000_0004 0b1111 rm = Just rm.triggerSelect
 readIlaMM 0x0000_0005 0b0001 rm = Just . resize $ pack rm.captureOperation
@@ -321,6 +324,7 @@ writeIlaMM ::
 writeIlaMM 0x0000_0000 0b0001 write rm = (rm{capture = unpack $ truncateB write}, None)
 writeIlaMM 0x0000_0000 0b0010 _write rm = (rm{triggered = False}, ResetTrigger)
 writeIlaMM 0x0000_0001 0b1111 write rm = (rm{triggerPoint = unpack $ resize write}, None)
+writeIlaMM 0x0000_0002 0b0001 write rm = (rm{outputBool = unpack $ resize write}, ResetTrigger)
 writeIlaMM 0x0000_0003 0b0001 write rm = (rm{triggerOperation = unpack $ resize write}, None)
 writeIlaMM 0x0000_0004 0b1111 write rm = (rm{triggerSelect = write}, None)
 writeIlaMM 0x0000_0005 0b0001 write rm = (rm{captureOperation = unpack $ resize write}, None)
@@ -357,7 +361,7 @@ ilaWb ::
   -- | The ILA wishbone interface
   Circuit
     (Wishbone dom Standard 32 4)
-    ()
+    (CSignal dom Bool)
 ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicates) = Circuit exposeIn
  where
   exposeIn (fwdM2S, _) = out
@@ -381,6 +385,7 @@ ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicat
         , captureMask = maxBound
         , captureCompare = 0
         , wordIndex = 0
+        , outputBool = False
         }
 
     -- \| Update parts of the RM which aren't depending on input from WB
@@ -523,7 +528,7 @@ ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicat
     -- Writes are done in one clock cycle, but wishbone timing requires us to delay it by one clock cycle
     out =
       ( register emptyWishboneS2M $ liftA2 reply delayedAck readManager
-      , ()
+      , ilaRM.outputBool
       )
 
 {- | The ILA component itself
@@ -543,13 +548,13 @@ ila ::
   -- outgoing stream are etherbone response packets.
   Circuit
     (PacketStream dom 4 ())
-    (PacketStream dom 4 ())
+    (PacketStream dom 4 (), CSignal dom Bool)
 ila config = circuit $ \incoming -> do
   (outgoing, wbMaster) <- etherboneC 0 (pure Nil) -< incoming
 
-  ilaWb config -< wbMaster
+  outputs <- ilaWb config -< wbMaster
 
-  idC -< outgoing
+  idC -< (outgoing, outputs)
 
 {- | UART wrapper around the ILA. A simple drop-in replacement for `ila`. Useful if the only
 connection to the host PC is an UART connection.
@@ -566,13 +571,13 @@ ilaUart ::
   -- to the toplevel UART RX and TX pins.
   Circuit
     (CSignal dom Bit)
-    (CSignal dom Bit)
+    (CSignal dom Bit, CSignal dom Bool)
 ilaUart baud config = circuit $ \rxBit -> do
   (rxByte, txBit) <- uartDf baud -< (txByte, rxBit)
 
   rxPs <- etherboneDfPacketizer <| holdUntilAck -< rxByte
   txByte <- ps2df -< txPs
 
-  txPs <- ila config -< rxPs
+  (txPs, outputs) <- ila config -< rxPs
 
-  idC -< txBit
+  idC -< (txBit, outputs)

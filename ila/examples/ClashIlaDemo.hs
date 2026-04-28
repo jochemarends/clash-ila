@@ -25,9 +25,11 @@ topLogicUart ::
   SNat baud ->
   -- | RX
   Signal dom Bit ->
-  -- | Leds
-  Signal dom Bit
-topLogicUart baud rx = tx
+  -- | TX and LED output
+  ( Signal dom Bit
+  , Signal dom Bool
+  )
+topLogicUart baud rx = (tx, outputs)
  where
   -- Simple demo signal to 'debug'
   counter0 :: (HiddenClockResetEnable dom) => Signal dom (Unsigned 36)
@@ -55,14 +57,16 @@ topLogicUart baud rx = tx
         , predicates = ilaDefaultPredicates
         -- ^ The list of predicates to select from during runtime
         }
-  tx = snd $ demoIla (rx, (()))
+  (tx, outputs) = snd $ demoIla (rx, ((),()))
 
 -- | The top entity
 topEntity ::
   "CLK" ::: Clock Dom48 ->
   "BTN" ::: Reset Dom48 ->
   "PMOD1_6" ::: Signal Dom48 Bit ->
-  "PMOD1_5" ::: Signal Dom48 Bit
+  ( "PMOD1_5" ::: Signal Dom48 Bit
+  , "rgb_led0_b" ::: Signal Dom48 Bool
+  )
 topEntity clk rst = withClockResetEnable clk rst enableGen (topLogicUart (SNat @115200))
 
 makeTopEntity 'topEntity

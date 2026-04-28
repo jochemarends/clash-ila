@@ -37,6 +37,7 @@ const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
   r      ---   Re-arm trigger
   a      ---   Toggle auto trigger re-arm
   v      ---   Write signals to VCD dump
+  o      ---   Toggle output signal
 "#;
 
 /// The reason to prompt the user with, mostly important to decide what to do next after a user has
@@ -103,6 +104,9 @@ pub struct TuiSession<'a> {
     auto_reset: bool,
     /// The connected device path
     device_path: String,
+    // The writable output signal. It would be better to fetch this value from the ILA, but this
+    // will do for now
+    output: bool,
 }
 
 impl<'a> TuiSession<'a> {
@@ -128,6 +132,7 @@ impl<'a> TuiSession<'a> {
             last_trigger_check: Instant::now(),
             auto_reset: false,
             device_path: device_path.display().to_string(),
+            output: false,
         })
     }
 
@@ -152,7 +157,7 @@ impl<'a> TuiSession<'a> {
             let info_layout = Layout::default()
                 .direction(layout::Direction::Vertical)
                 .margin(1)
-                .constraints([Constraint::Length(5), Constraint::Fill(1)])
+                .constraints([Constraint::Length(6), Constraint::Fill(1)])
                 .split(main_layout[1]);
 
             // Ensure the lines fit within the Paragraph's range
@@ -201,6 +206,7 @@ impl<'a> TuiSession<'a> {
                         false => "DISABLED".bold().red(),
                     },
                 ]),
+                Line::raw(format!("The output signal is {}", self.output)),
             ]));
             let info_log_section = Paragraph::new(
                 self.log
@@ -350,6 +356,12 @@ impl<'a> TuiSession<'a> {
                     Some("dump.vcd"),
                     PromptReason::SaveVcd,
                 ));
+                KeyResponse::Nothing
+            }
+            (TuiState::Main, KeyCode::Char('o'), _) => {
+                self.output = !self.output;
+                let _ = perform_register_operation(tx_port, self.config, &IlaRegisters::SetOutput(self.output));
+                self.log.push("Toggled the output signal!".to_string());
                 KeyResponse::Nothing
             }
             (TuiState::InPrompt(_), KeyCode::Esc, _) => {
