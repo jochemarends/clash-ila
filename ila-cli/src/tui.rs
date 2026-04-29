@@ -26,6 +26,7 @@ use crate::predicates::PredicateTarget;
 use crate::predicates_tui::State as PredState;
 use crate::ui::textinput::TextPromptState;
 use crate::vcd::write_to_vcd;
+use crate::output_signals_tui::{State as OutputSignalsState};
 
 /// The keybind text displayed in the TUI
 const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
@@ -37,7 +38,7 @@ const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
   r      ---   Re-arm trigger
   a      ---   Toggle auto trigger re-arm
   v      ---   Write signals to VCD dump
-  o      ---   Toggle output signal
+  o      ---   Drive output signals
 "#;
 
 /// The reason to prompt the user with, mostly important to decide what to do next after a user has
@@ -59,6 +60,7 @@ enum TuiState<'a> {
     InPrompt(TextPromptState<PromptReason>),
     /// Manages the trigger predicates
     Predicates(PredState<'a>),
+    OutputSignals(OutputSignalsState<'a>),
 }
 
 /// The response of the TUI key event handler
@@ -104,9 +106,6 @@ pub struct TuiSession<'a> {
     auto_reset: bool,
     /// The connected device path
     device_path: String,
-    // The writable output signal. It would be better to fetch this value from the ILA, but this
-    // will do for now
-    output: bool,
 }
 
 impl<'a> TuiSession<'a> {
@@ -132,7 +131,6 @@ impl<'a> TuiSession<'a> {
             last_trigger_check: Instant::now(),
             auto_reset: false,
             device_path: device_path.display().to_string(),
-            output: false,
         })
     }
 
@@ -157,7 +155,7 @@ impl<'a> TuiSession<'a> {
             let info_layout = Layout::default()
                 .direction(layout::Direction::Vertical)
                 .margin(1)
-                .constraints([Constraint::Length(6), Constraint::Fill(1)])
+                .constraints([Constraint::Length(5), Constraint::Fill(1)])
                 .split(main_layout[1]);
 
             // Ensure the lines fit within the Paragraph's range
@@ -206,7 +204,6 @@ impl<'a> TuiSession<'a> {
                         false => "DISABLED".bold().red(),
                     },
                 ]),
-                Line::raw(format!("The output signal is {}", self.output)),
             ]));
             let info_log_section = Paragraph::new(
                 self.log
@@ -264,7 +261,10 @@ impl<'a> TuiSession<'a> {
             TuiState::InPrompt(_) => self.render_main(),
             TuiState::Predicates(state) => {
                 state.render(&mut self.term);
-            }
+            },
+            TuiState::OutputSignals(state) => {
+                state.render(&mut self.term);
+            },
         }
     }
 
@@ -359,9 +359,12 @@ impl<'a> TuiSession<'a> {
                 KeyResponse::Nothing
             }
             (TuiState::Main, KeyCode::Char('o'), _) => {
-                self.output = !self.output;
-                let _ = perform_register_operation(tx_port, self.config, &IlaRegisters::SetOutput(self.output));
-                self.log.push("Toggled the output signal!".to_string());
+                if self.config.signals.len() == 0 {
+                    self.log.push("Unable to drive output signals".to_owned());
+                    self.log.push("The ILA has no output signals".to_owned());
+                } else {
+                    self.state = TuiState::OutputSignals(OutputSignalsState::new(self.config));
+                }
                 KeyResponse::Nothing
             }
             (TuiState::InPrompt(_), KeyCode::Esc, _) => {
@@ -465,6 +468,21 @@ impl<'a> TuiSession<'a> {
                                 should_rearm = changes;
                             }
                             crate::predicates_tui::PredicateEventResponse::Nothing => continue,
+                        }
+                    }
+                }
+
+                if let TuiState::OutputSignals(state) = &mut self.state {
+                    if let Ok(ref event) = raw_event {
+                        let event_response = state.handle_event(&mut tx_port, self.config, event);
+                        self.render();
+
+                        match event_response {
+                            crate::output_signals_tui::EventResponse::QuitProgram => return,
+                            crate::output_signals_tui::EventResponse::MainMenu => {
+                                self.state = TuiState::Main;
+                            },
+                            crate::output_signals_tui::EventResponse::Nothing => continue,
                         }
                     }
                 }

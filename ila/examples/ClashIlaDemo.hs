@@ -16,6 +16,8 @@ import Clash.Ila
 
 import Domain
 import Protocols
+import Data.Word (Word32)
+import Data.Data (Proxy(..))
 
 -- | Simple UART ILA demonstration
 topLogicUart ::
@@ -28,8 +30,10 @@ topLogicUart ::
   -- | TX and LED output
   ( Signal dom Bit
   , Signal dom Bool
+  , Signal dom Bool
+  , Signal dom Bool
   )
-topLogicUart baud rx = (tx, outputs)
+topLogicUart baud rx = (tx, not <$> red, not <$> green, not <$> blue)
  where
   -- Simple demo signal to 'debug'
   counter0 :: (HiddenClockResetEnable dom) => Signal dom (Unsigned 36)
@@ -56,8 +60,10 @@ topLogicUart baud rx = (tx, outputs)
         -- ^ Amount of samples in the buffer after trigger
         , predicates = ilaDefaultPredicates
         -- ^ The list of predicates to select from during runtime
+        , outputs = ilaOutputs (Proxy @(Unsigned 29), "foo") (Proxy @Bool, "red") (Proxy @Bool, "green") (Proxy @Bool, "blue") :: (Vec 4 GenSignal, Proxy (((((), (Unsigned 29)), Bool), Bool), Bool))
         }
   (tx, outputs) = snd $ demoIla (rx, ((),()))
+  (red, green, blue) = unbundle $ (\(((((), _), r), g), b) -> (r, g, b)) <$> outputs
 
 -- | The top entity
 topEntity ::
@@ -65,6 +71,8 @@ topEntity ::
   "BTN" ::: Reset Dom48 ->
   "PMOD1_6" ::: Signal Dom48 Bit ->
   ( "PMOD1_5" ::: Signal Dom48 Bit
+  , "rgb_led0_r" ::: Signal Dom48 Bool
+  , "rgb_led0_g" ::: Signal Dom48 Bool
   , "rgb_led0_b" ::: Signal Dom48 Bool
   )
 topEntity clk rst = withClockResetEnable clk rst enableGen (topLogicUart (SNat @115200))

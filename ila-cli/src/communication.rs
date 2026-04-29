@@ -179,7 +179,6 @@ pub enum RegisterOutput {
     TriggerOp(PredicateOperation),
     TriggerSelect(u32),
     Hash(bool),
-    SetOutput(bool),
     CaptureMask(SignalCluster),
     CaptureCompare(SignalCluster),
     CaptureOp(PredicateOperation),
@@ -215,7 +214,6 @@ impl CommandOutput for RegisterOutput {
             RegisterOutput::TriggerOp(predicate_operation) => predicate_operation.command_output(),
             RegisterOutput::TriggerSelect(select) => select.command_output(),
             RegisterOutput::Hash(hash) => hash.command_output(),
-            RegisterOutput::SetOutput(b) => b.command_output(),
             RegisterOutput::CaptureMask(signal_cluster) => signal_cluster.command_output(),
             RegisterOutput::CaptureCompare(signal_cluster) => signal_cluster.command_output(),
             RegisterOutput::CaptureOp(predicate_operation) => predicate_operation.command_output(),
@@ -235,7 +233,9 @@ impl IlaRegisters {
             IlaRegisters::TriggerPoint(_) => (0x0000_0001, [true; 4]),
             IlaRegisters::SampleCount => (0x0000_0007, [true; 4]),
             IlaRegisters::Hash(_) => (0x0000_0002, [true; 4]),
-            IlaRegisters::SetOutput(_) => (0x0000_0002, [false, false, false, true]),
+
+            IlaRegisters::StagedOutput(_) => (0x3300_0000, [true; 4]),
+            IlaRegisters::CommitOutput => (0x0000_0001, [false, false, true, false]),
 
             IlaRegisters::TriggerMask(_) => (0x1000_0000, [true; 4]),
             IlaRegisters::TriggerCompare(_) => (0x1100_0000, [true; 4]),
@@ -287,7 +287,8 @@ impl IlaRegisters {
                 let hash_matches = output.first().map(|hash| hash == compare).unwrap_or(false);
                 RegisterOutput::Hash(hash_matches)
             },
-            IlaRegisters::SetOutput(b) => RegisterOutput::SetOutput(*b),
+            IlaRegisters::StagedOutput(_) => RegisterOutput::None,
+            IlaRegisters::CommitOutput => RegisterOutput::None,
             IlaRegisters::CaptureMask(ReadWrite::Read(_)) => {
                 RegisterOutput::CaptureMask(SignalCluster::from_data(ila, output))
             }
@@ -377,7 +378,18 @@ impl IlaRegisters {
                 WbTransaction::new_reads(byte_select, addr, indices.clone())
             }
             IlaRegisters::Hash(_) => WbTransaction::new_reads(byte_select, addr, vec![0]),
-            IlaRegisters::SetOutput(b) => WbTransaction::new_writes(byte_select, addr, vec![*b as u32]),
+            IlaRegisters::StagedOutput(bytes) => {
+                let words: Vec<u32> = bytes
+                    .chunks(4)
+                    .map(|chunk| {
+                        chunk
+                            .iter()
+                            .fold(0, |acc, byte| (acc << 8) | (*byte as u32))
+                    })
+                    .collect();
+                WbTransaction::new_writes(byte_select, addr, words)
+            }
+            IlaRegisters::CommitOutput => WbTransaction::new_writes(byte_select, addr, vec![0]),
             IlaRegisters::CaptureMask(ReadWrite::Write(items)) => {
                 let words: Vec<u32> = items
                     .chunks(4)

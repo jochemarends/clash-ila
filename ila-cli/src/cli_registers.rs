@@ -95,24 +95,6 @@ impl TypedValueParser for UnsupportedParser {
     }
 }
 
-make_container_arg!(BoolParser, Bool, bool, "Performs a read", "Performs a write");
-impl TypedValueParser for BoolParser {
-    type Value = Bool;
-
-    fn parse_ref(
-        &self,
-        _cmd: &Command,
-        _arg: Option<&Arg>,
-        value: &std::ffi::OsStr,
-    ) -> Result<Self::Value, Error> {
-        match value.to_str() {
-            Some("true") => Ok(Bool(true)),
-            Some("false") => Ok(Bool(false)),
-            _ => Err(Error::new(ErrorKind::InvalidValue)),
-        }
-    }
-}
-
 make_container_arg!(FlagParser, Flag, (), "Performs a read", "Performs a write");
 impl TypedValueParser for FlagParser {
     type Value = Flag;
@@ -385,8 +367,10 @@ where
 pub enum RegisterSubcommand {
     /// Register containing the capture state of the ILA
     Capture(ReadWriteArgument<Unsupported, Unsupported>),
-    /// Register containing the bool output state of the ILA
-    SetOutput(ReadWriteArgument<Unsupported, Bool>),
+    /// The buffer for staged output values
+    StagedOutput(ReadWriteArgument<Unsupported, ByteStream>),
+    // Register for synchronizing the ILA's output signals with the staged output buffer
+    CommitOutput(ReadWriteArgument<Unsupported, Unsupported>),
     /// Register re-arming the trigger (and clear the buffer)
     TriggerReset(ReadWriteArgument<Unsupported, Unsupported>),
     /// Checks the ILA for its triggered status

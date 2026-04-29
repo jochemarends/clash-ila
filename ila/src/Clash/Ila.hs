@@ -188,6 +188,8 @@ A lot of the register map is also exposed as a memory map, with the following la
 | 0x2100_0000 | 0b1111     | ILA capture compare   | ReadWrite   |
 | 0x3100_0000 | 0b1111     | Word index            | Write'3     |
 | 0x3200_0000 | 0b1111     | Perform read          | Read'4      |
+| 0x3300_0000 | 0b1111     | Output stage buffer   | Write'5     |
+| 0x0000_0001 | 0b0010     | Output commit         | Write'6     |
 
 '1: Reading from this address will return wether or not the ILA has been triggered or not
 '2: Each bit is for one predicate
@@ -196,11 +198,16 @@ A lot of the register map is also exposed as a memory map, with the following la
     read and which word of that buffer entry.
 '4: Actually performs the memory reads from the internal ILA buffer, the buffer index is the
     address being accessed as long as it is within 0x3200_0000 0x32ff_ffff.
+'5: A buffer for staging data that drives the ILA's output signals, if any. Writing to address
+    0x3300_0000 + N sets the Nth word of this buffer. Output signals are packed without padding;
+    for example, signals A, B, and C with widths of 3, 1, and 4 bits respectively are packed as:
+    AAABCCCC.
+'6: Synchronizes the ILA's output signals with the staged output buffer upon a write.
 
 Future optimisation: introduce `Buffer length` register to perform multiple reads automatically
 without requiring manual reads. This will require a somewhat large overhaul of the TUI.
 -}
-data IlaRM bitSizeA depth n = IlaRM
+data IlaRM bitSizeA out depth n = IlaRM
   { capture :: Bool
   -- ^ If the ILA should be capturing signals
   , triggered :: Bool
@@ -235,6 +242,8 @@ data IlaRM bitSizeA depth n = IlaRM
   -- ^ What buffer to read
   , outputBool :: Bool
   -- ^ Test output to set
+  , outputs :: out
+  , stagedOutputs :: out
   }
   deriving (Generic, NFDataX, Show)
 
@@ -242,7 +251,7 @@ data IlaRM bitSizeA depth n = IlaRM
 wishbone packet
 -}
 readIlaMM ::
-  forall a depth n.
+  forall a out depth n.
   ( KnownNat depth
   , KnownNat a
   , KnownNat n
@@ -250,13 +259,14 @@ readIlaMM ::
   , 1 <= depth
   , 1 <= a `DivRU` 32
   , 1 <= a
+  , 1 <= BitSize out
   ) =>
   -- | The wishbone address
   BitVector 32 ->
   -- | The wishbone bus select
   BitVector 4 ->
   -- | The ILA MM
-  IlaRM a depth n ->
+  IlaRM a out depth n ->
   -- | Associated value with the address and bus select, `Nothing` if there is none
   Maybe (BitVector 32)
 readIlaMM 0x0000_0000 0b0001 rm = Just . extend $ pack rm.capture
@@ -277,6 +287,8 @@ readIlaMM address 0b1111 rm
       Just $ getWord rm.captureMask index
   | testBits address 0x2100_0000 0xff00_0000 =
       Just $ getWord rm.captureCompare index
+  | testBits address 0x3300_0000 0xff00_0000 =
+     Just $ getWord rm.outputs (resize index)
  where
   index = unpack . resize $ address .&. 0x00ff_ffff
 readIlaMM _ _ _ = Nothing
@@ -302,13 +314,16 @@ data IlaAction = None | ResetTrigger
 
 -- | Update the memory mapped registers from the register map from the wishbone request
 writeIlaMM ::
-  forall a depth n.
+  forall a out depth n.
   ( KnownNat depth
   , KnownNat a
+  , KnownNat (BitSize out)
+  , BitPack out
   , KnownNat n
   , 1 <= depth
   , 1 <= n
   , 1 <= a `DivRU` 32
+  , 1 <= (BitSize out) `DivRU` 32
   , 1 <= a
   ) =>
   -- | The wishbone address
@@ -318,9 +333,9 @@ writeIlaMM ::
   -- | The value to write
   BitVector 32 ->
   -- | The Ila register map
-  IlaRM a depth n ->
+  IlaRM a out depth n ->
   -- | Updated Ila register map, invalid addresses will not modify the register map
-  (IlaRM a depth n, IlaAction)
+  (IlaRM a out depth n, IlaAction)
 writeIlaMM 0x0000_0000 0b0001 write rm = (rm{capture = unpack $ truncateB write}, None)
 writeIlaMM 0x0000_0000 0b0010 _write rm = (rm{triggered = False}, ResetTrigger)
 writeIlaMM 0x0000_0001 0b1111 write rm = (rm{triggerPoint = unpack $ resize write}, None)
@@ -329,6 +344,7 @@ writeIlaMM 0x0000_0003 0b0001 write rm = (rm{triggerOperation = unpack $ resize 
 writeIlaMM 0x0000_0004 0b1111 write rm = (rm{triggerSelect = write}, None)
 writeIlaMM 0x0000_0005 0b0001 write rm = (rm{captureOperation = unpack $ resize write}, None)
 writeIlaMM 0x0000_0006 0b1111 write rm = (rm{captureSelect = write}, None)
+writeIlaMM 0x0000_0001 0b0010 _write rm = (rm{outputs = rm.stagedOutputs}, None)
 writeIlaMM address 0b1111 write rm
   | testBits address 0x1000_0000 0xff00_0000 =
       (rm{triggerMask = setWord rm.triggerMask index write}, None)
@@ -341,6 +357,9 @@ writeIlaMM address 0b1111 write rm
 
   | testBits address 0x3100_0000 0xff00_0000 =
       (rm{wordIndex = unpack $ resize write}, None)
+
+  | testBits address 0x3300_0000 0xff00_0000 =
+     (rm{stagedOutputs = setWord rm.stagedOutputs (resize index) write}, None)
  where
   -- We use 32 bit words, the indices incrementing writes receive is on a byte basis
   -- To correct for this, we can simply shift right by 2 (dividing by 4)
@@ -354,20 +373,20 @@ This circuit can be used to instantiate and configure an ILA using a wishbone in
 ILA behaviour is done by writing to specific addresses and selecting the right bytes using busSelect.
 -}
 ilaWb ::
-  forall dom.
+  forall dom out.
   (HiddenClockResetEnable dom) =>
   -- | Initial ILA configuration
-  IlaConfig dom ->
+  IlaConfig dom out ->
   -- | The ILA wishbone interface
   Circuit
     (Wishbone dom Standard 32 4)
-    (CSignal dom Bool)
-ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicates) = Circuit exposeIn
+    (CSignal dom out)
+ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing predicates _outputs) = Circuit exposeIn
  where
   exposeIn (fwdM2S, _) = out
    where
     -- \| The initial contents of the memory map
-    initRM :: IlaRM (BitSize a) depth m
+    initRM :: IlaRM (BitSize a) outputs depth m
     initRM =
       IlaRM
         { capture = False
@@ -386,6 +405,8 @@ ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicat
         , captureCompare = 0
         , wordIndex = 0
         , outputBool = False
+        , outputs = unpack 0
+        , stagedOutputs = unpack 0
         }
 
     -- \| Update parts of the RM which aren't depending on input from WB
@@ -397,9 +418,9 @@ ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicat
       -- \| The amount of samples currently being stored in the buffer
       Index (depth + 1) ->
       -- \| The current register map
-      IlaRM (BitSize a) depth m ->
+      IlaRM (BitSize a) out depth m ->
       -- \| The updated register map
-      IlaRM (BitSize a) depth m
+      IlaRM (BitSize a) out depth m
     updateRM triggered capture buffLength rm =
       rm
         { triggered = rm.triggered || triggered
@@ -410,7 +431,7 @@ ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicat
         }
 
     -- \| Selects the right predicate and applies it on incoming sample
-    doesTrigger :: IlaRM (BitSize a) depth m -> a -> Vec m (RawPredicate a) -> Bool
+    doesTrigger :: IlaRM (BitSize a) out depth m -> a -> Vec m (RawPredicate a) -> Bool
     doesTrigger rm currentSample predicates' =
       rm.capture -- If capture is disabled, don't bother with testing predicates
         && ( predicateOperation rm.triggerOperation $
@@ -421,7 +442,7 @@ ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicat
            )
 
     -- \| Selects the right predicate and applies it on incoming sample
-    captureActive :: IlaRM (BitSize a) depth m -> a -> Vec m (RawPredicate a) -> Bool
+    captureActive :: IlaRM (BitSize a) out depth m -> a -> Vec m (RawPredicate a) -> Bool
     captureActive rm currentSample predicates' =
       predicateOperation rm.captureOperation $
         zipWith
@@ -484,7 +505,7 @@ ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicat
       -- \| The current WB packet
       WishboneM2S 32 4 ->
       -- \| The ila register map
-      IlaRM (BitSize a) depth m ->
+      IlaRM (BitSize a) out depth m ->
       -- \| The value the buffer is currently pointing at
       BitVector 32 ->
       -- \| The value the component should respond with
@@ -528,7 +549,7 @@ ilaWb (IlaConfig @_ @a @depth @m depth initTriggerPoint ilaHash tracing predicat
     -- Writes are done in one clock cycle, but wishbone timing requires us to delay it by one clock cycle
     out =
       ( register emptyWishboneS2M $ liftA2 reply delayedAck readManager
-      , ilaRM.outputBool
+      , ilaRM.outputs
       )
 
 {- | The ILA component itself
@@ -540,15 +561,15 @@ device. If run configuration of the ILA on the FPGA is desired, please look at `
 an ILA with an Wishbone interface instead.
 -}
 ila ::
-  forall dom.
+  forall dom out.
   (HiddenClockResetEnable dom) =>
   -- | The initial configuration of the ILA
-  IlaConfig dom ->
+  IlaConfig dom out ->
   -- | The ILA circuit, the incoming packet stream should contain valid `Etherbone` packets. The
   -- outgoing stream are etherbone response packets.
   Circuit
     (PacketStream dom 4 ())
-    (PacketStream dom 4 (), CSignal dom Bool)
+    (PacketStream dom 4 (), CSignal dom out)
 ila config = circuit $ \incoming -> do
   (outgoing, wbMaster) <- etherboneC 0 (pure Nil) -< incoming
 
@@ -560,18 +581,18 @@ ila config = circuit $ \incoming -> do
 connection to the host PC is an UART connection.
 -}
 ilaUart ::
-  forall dom baud.
+  forall dom baud out.
   ( HiddenClockResetEnable dom
   , ValidBaud dom baud
   ) =>
   SNat baud ->
   -- | The initial configuration of the ILA
-  IlaConfig dom ->
+  IlaConfig dom out ->
   -- | The ILA circuit but with signals of bits as input and output. These should be directly wired
   -- to the toplevel UART RX and TX pins.
   Circuit
     (CSignal dom Bit)
-    (CSignal dom Bit, CSignal dom Bool)
+    (CSignal dom Bit, CSignal dom out)
 ilaUart baud config = circuit $ \rxBit -> do
   (rxByte, txBit) <- uartDf baud -< (txByte, rxBit)
 
