@@ -8,48 +8,10 @@ use ratatui::{layout::Flex, prelude::*, widgets::Block};
 
 use crate::ui::textinput::TextPromptState;
 use crate::ui::listbox::Listbox;
+use crate::auto_export::{AutoExportConfig, AutoExportMode};
 
 const HELP_MESSAGE: &str = r#"UP and DOWN to navigate between elements
 ENTER to save changes, ESC to discard"#;
-
-/// Represents the different modes for auto-exporting as VCD
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum AutoExportMode {
-    /// Before writing each [`SignalCluster`], truncates the file, then writes the VCD header,
-    /// variable definition section, and variable initialization section
-    Truncate,
-    /// Writes the VCD header, variable definition section, and variable initialization section
-    /// before writing the first [`SignalCluster`]. Subsequent [`SignalCluster`]s are appended
-    Append,
-}
-
-impl std::fmt::Display for AutoExportMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            AutoExportMode::Truncate => "TRUNCATE",
-            AutoExportMode::Append => "APPEND",
-        })
-    }
-}
-
-impl TryFrom<u32> for AutoExportMode {
-    type Error = ();
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(AutoExportMode::Truncate),
-            1 => Ok(AutoExportMode::Append),
-            _ => Err(()),
-        }
-    }
-}
-
-/// Auto-export options
-#[derive(Debug, Clone)]
-pub struct AutoExportOptions {
-    pub file_name: String,
-    pub mode: AutoExportMode,
-}
 
 /// Represents the focused UI element
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -63,10 +25,7 @@ pub enum AutoExportEventResponse {
     /// Close the program
     QuitProgram,
     /// Return to the main menu
-    ///
-    /// * `message` - Message to append to the log of the main menu
-    /// * `options` - Confirmed export options, or `None` if the prompt was cancelled
-    MainMenu{ message: String, options: Option<AutoExportOptions> },
+    MainMenu(Option<AutoExportConfig>),
     /// Do nothing
     Nothing,
 }
@@ -112,8 +71,11 @@ impl State {
 
             let main_block = Block::bordered().title("Auto-Export Options");
 
-            let modes_description = Paragraph::new("There are two auto-export modes: TRUNCATE keeps overwriting a file with the last captured buffer while APPEND writes all buffers sequentially to a file.")
-                .wrap(Wrap { trim: true });
+            let modes_description = Paragraph::new(concat!(
+                "There are two auto-export modes: TRUNCATE overwrites a file with the lastest buffer as VCD, ",
+                "while APPEND writes all buffers sequentially to the same VCD file."
+            ))
+            .wrap(Wrap { trim: true });
 
             // Account for borders
             let modes_description_line_count = modes_description.line_count(f.area().width.saturating_sub(2)) as u16;
@@ -166,10 +128,7 @@ impl State {
             }) => AutoExportEventResponse::QuitProgram,
             Event::Key(KeyEvent {
                 code: KeyCode::Esc, ..
-            }) => AutoExportEventResponse::MainMenu {
-                message: "Cancelled auto-export".into(),
-                options: None,
-            },
+            }) => AutoExportEventResponse::MainMenu(None),
             Event::Key(KeyEvent {
                 code: KeyCode::Enter, ..
             }) => {
@@ -181,10 +140,7 @@ impl State {
                     return AutoExportEventResponse::Nothing;
                 };
 
-                AutoExportEventResponse::MainMenu {
-                    message: "Started an auto-export session".into(),
-                    options: Some(AutoExportOptions { file_name, mode, }),
-                }
+                AutoExportEventResponse::MainMenu(Some(AutoExportConfig { file_name, mode, }))
             },
             _ => {
                 self.handle_input(event);

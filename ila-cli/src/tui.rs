@@ -1,4 +1,4 @@
-use std::io::{Read, Write, Seek, Result as IoResult};
+use std::io::{Read, Write};
 use std::path::Path;
 use std::time::Instant;
 use std::{io, time::Duration};
@@ -25,8 +25,9 @@ use crate::predicates::IlaPredicate;
 use crate::predicates::PredicateTarget;
 use crate::predicates_tui::State as PredState;
 use crate::ui::textinput::TextPromptState;
-use crate::vcd::{VcdWriter, VcdWriterConfig, write_to_vcd};
-use crate::auto_export_tui::{AutoExportMode, AutoExportOptions, State as AutoExportState};
+use crate::vcd::write_to_vcd;
+use crate::auto_export::AutoExportSession;
+use crate::auto_export_tui::{State as AutoExportState};
 
 /// The keybind text displayed in the TUI
 const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
@@ -72,63 +73,6 @@ enum KeyResponse {
     QuitProgram,
     /// Changes to the ILA were applied, possibly re-arm the trigger
     AppliedChanges,
-}
-
-/// The state of an auto-export session
-struct AutoExportSession {
-    options: AutoExportOptions,
-    writer: VcdWriter<std::io::BufWriter<std::fs::File>>,
-    /// For VCD, whether the header, variable definition section, and the variable initialization
-    /// section should be written before writing data dumps.
-    should_write_preamble: bool,
-}
-
-impl AutoExportSession {
-    /// Construct a new auto-export session
-    fn new(options: AutoExportOptions, config: &IlaConfig) -> IoResult<Self> {
-        let file = std::fs::File::options()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&options.file_name)?;
-
-        let writer = std::io::BufWriter::new(file);
-
-        let mut vcd_config = VcdWriterConfig::with_module(config.toplevel.clone());
-        for signal in &config.signals {
-            vcd_config.add_wire(signal.name.clone(), signal.width);
-        }
-
-        Ok(Self {
-            options,
-            writer: vcd_config.writer(writer),
-            should_write_preamble: false,
-        })
-    }
-}
-
-impl AutoExportSession {
-    fn export_cluster(&mut self, signals: &SignalCluster) -> IoResult<()> {
-        match self.options.mode {
-            AutoExportMode::Truncate => {
-                let file = self.writer.writer_mut().get_mut();
-                file.set_len(0)?;
-                file.rewind()?;
-                self.writer.write_preamble()?;
-                self.should_write_preamble = true;
-            },
-            AutoExportMode::Append => {
-                if !self.should_write_preamble {
-                    self.writer.write_preamble()?;
-                    self.should_write_preamble = true;
-                }
-            }
-        };
-
-        self.writer.write_cluster(signals)?;
-        self.writer.flush()
-    }
 }
 
 /// A TUI session
@@ -263,13 +207,28 @@ impl<'a> TuiSession<'a> {
                         false => "DISABLED".bold().red(),
                     },
                 ]),
-                Line::from_iter([
-                    "An auto-export session is ".into(),
-                    match self.auto_export_session.is_some() {
-                        true => "RUNNING".bold().green(),
-                        false => "NOT RUNNING".bold().red(),
-                    },
-                ]),
+                Line::from_iter({
+                    if let Some(ref session) = self.auto_export_session {
+                        vec![
+                            "Auto-export session is".into(),
+                            " RUNNING".bold().red(),
+                            format!(
+                                " | file: '{}' | mode: {} | running: {}",
+                                session.config().file_name,
+                                session.config().mode,
+                                {
+                                    let seconds = session.started_at().elapsed().as_secs();
+                                    format!("{}h {}m {}s", seconds / 3600, (seconds % 3600) / 60, (seconds % 60))
+                                },
+                            ).into(),
+                        ]
+                    } else {
+                        vec![
+                            "Auto-export session is".into(),
+                            " NOT RUNNING".bold().red(),
+                        ]
+                    }
+                }),
             ]));
             let info_log_section = Paragraph::new(
                 self.log
@@ -552,17 +511,17 @@ impl<'a> TuiSession<'a> {
 
                         match stop_program {
                             crate::auto_export_tui::AutoExportEventResponse::QuitProgram => return,
-                            crate::auto_export_tui::AutoExportEventResponse::MainMenu { message: _log, options } => {
+                            crate::auto_export_tui::AutoExportEventResponse::MainMenu(config) => {
                                 self.state = TuiState::Main;
-                                if let Some(options) = options {
-                                    if let Ok(session) = AutoExportSession::new(options, &self.config) {
+                                if let Some(config) = config {
+                                    if let Ok(session) = AutoExportSession::new(config, &self.config) {
                                         self.auto_export_session = Some(session);
-                                        self.log.push("Started an auto-export session".to_string());
+                                        self.log.push("Auto-export session started".to_string());
                                     } else {
-                                        self.log.push("Failed to start auto-export session".to_string());
+                                        self.log.push("Auto-export session failed to start".to_string());
                                     }
                                 } else {
-                                    self.log.push("Cancelled auto-export".to_string());
+                                    self.log.push("Auto-export cancelled".to_string());
                                 }
                             }
                             crate::auto_export_tui::AutoExportEventResponse::Nothing => continue,

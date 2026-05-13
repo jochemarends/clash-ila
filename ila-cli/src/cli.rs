@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::auto_export::AutoExportMode;
 use crate::communication::{RegisterOutput, perform_buffer_reads, perform_register_operation};
 use crate::cli_registers::IlaRegisters;
 use crate::config::ConfigMethod;
