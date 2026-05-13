@@ -92,7 +92,7 @@ impl Listbox {
         self.selected
     }
 
-    // The items of the listbox
+    /// Get the items of the listbox
     pub fn items(&self) -> &[String] {
         &self.items
     }
