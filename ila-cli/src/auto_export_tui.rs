@@ -11,7 +11,7 @@ use crate::ui::listbox::Listbox;
 use crate::auto_export::{AutoExportConfig, AutoExportMode};
 
 const HELP_MESSAGE: &str = r#"UP and DOWN to navigate between elements
-ENTER to save changes, ESC to discard"#;
+ENTER to start an auto-export session, ESC to cancel"#;
 
 /// Represents the focused UI element
 #[derive(Debug, Copy, Clone, PartialEq)]
