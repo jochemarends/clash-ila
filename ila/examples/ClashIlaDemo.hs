@@ -60,10 +60,11 @@ topLogicUart baud rx = (tx, not <$> red, not <$> green, not <$> blue)
         -- ^ Amount of samples in the buffer after trigger
         , predicates = ilaDefaultPredicates
         -- ^ The list of predicates to select from during runtime
-        , outputs = ilaOutputs (Proxy @(Unsigned 29), "foo") (Proxy @Bool, "red") (Proxy @Bool, "green") (Proxy @Bool, "blue") :: (Vec 4 GenSignal, Proxy (((((), (Unsigned 29)), Bool), Bool), Bool))
+        , outputs = Proxy @('[ '(Bool, "red"), '(Bool, "green"), '(Bool, "blue")])
+        -- ^ Signals to be emitted by the ILA. These are controllable via the CLI
         }
   (tx, outputs) = snd $ demoIla (rx, ((),()))
-  (red, green, blue) = unbundle $ (\(((((), _), r), g), b) -> (r, g, b)) <$> outputs
+  (red, green, blue) = unbundle $ (\((((), r), g), b) -> (r, g, b)) <$> outputs
 
 -- | The top entity
 topEntity ::
