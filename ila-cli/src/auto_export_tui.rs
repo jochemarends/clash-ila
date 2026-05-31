@@ -1,4 +1,4 @@
-//! TUI state and logic for auto-exporting readings as VCD
+//! TUI state and logic for auto-exporting samples as VCD
 
 use std::io::Stdout;
 

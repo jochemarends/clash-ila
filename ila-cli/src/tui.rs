@@ -24,10 +24,11 @@ use crate::config::IlaConfig;
 use crate::predicates::IlaPredicate;
 use crate::predicates::PredicateTarget;
 use crate::predicates_tui::State as PredState;
+use crate::ui::polarinput::{PolarPrompt, PolarPromptEvent};
 use crate::ui::textinput::TextPromptState;
 use crate::vcd::write_to_vcd;
 use crate::auto_export::AutoExportSession;
-use crate::auto_export_tui::{State as AutoExportState};
+use crate::auto_export_tui::State as AutoExportState;
 
 /// The keybind text displayed in the TUI
 const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
@@ -45,11 +46,17 @@ const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
 /// The reason to prompt the user with, mostly important to decide what to do next after a user has
 /// inputted data to the prompt
 #[derive(Debug, PartialEq, Eq, Clone)]
-enum PromptReason {
+enum TextPromptReason {
     /// Prompt for the filename to save the VCD too
     SaveVcd,
     /// Prompt to change the trigger
     ChangeTrigger,
+}
+
+#[derive(Debug, Clone)]
+enum Prompt<'a> {
+    TextPrompt(TextPromptState<TextPromptReason>),
+    StopAutoExportPrompt(PolarPrompt<'a>),
 }
 
 /// The state of the TUI
@@ -58,7 +65,7 @@ enum TuiState<'a> {
     /// The TUI is in an idle state
     Main,
     /// The TUI is currently prompting the user for input
-    InPrompt(TextPromptState<PromptReason>),
+    InPrompt(Prompt<'a>),
     /// Manages the trigger predicates
     Predicates(PredState<'a>),
     AutoExport(AutoExportState),
@@ -107,6 +114,7 @@ pub struct TuiSession<'a> {
     auto_reset: bool,
     /// The connected device path
     device_path: String,
+    /// Holds the auto-export session, if active
     auto_export_session: Option<AutoExportSession>,
 }
 
@@ -211,9 +219,9 @@ impl<'a> TuiSession<'a> {
                     if let Some(ref session) = self.auto_export_session {
                         vec![
                             "Auto-export session is".into(),
-                            " RUNNING".bold().red(),
+                            " RUNNING".bold().green(),
                             format!(
-                                " | file: '{}' | mode: {} | running: {}",
+                                " | file: '{}' | mode: {} | duration: {}",
                                 session.config().file_name,
                                 session.config().mode,
                                 {
@@ -247,34 +255,58 @@ impl<'a> TuiSession<'a> {
             f.render_widget(info_info_section, info_layout[0]);
             f.render_widget(info_log_section, info_layout[1]);
 
-            if let TuiState::InPrompt(text_prompt) = &mut self.state {
-                let width = size.width.saturating_sub(10);
-                let around = Rect::new(
-                    size.x + size.width.div_ceil(2).saturating_sub(width / 2),
-                    size.y + size.height.div_ceil(2).saturating_sub(1),
-                    width.min(size.width),
-                    3.min(size.height),
-                );
+            if let TuiState::InPrompt(prompt) = &mut self.state {
+                match prompt {
+                    Prompt::TextPrompt(text_prompt) => {
+                        let width = size.width.saturating_sub(10);
+                        let around = Rect::new(
+                            size.x + size.width.div_ceil(2).saturating_sub(width / 2),
+                            size.y + size.height.div_ceil(2).saturating_sub(1),
+                            width.min(size.width),
+                            3.min(size.height),
+                        );
 
-                let title = match text_prompt.reason {
-                    PromptReason::SaveVcd => "Save VCD file (default: dump.vcd)".into(),
-                    PromptReason::ChangeTrigger => {
-                        format!("Change trigger point [0-{}]", self.config.buffer_size)
-                    }
-                };
+                        let title = match text_prompt.reason {
+                            TextPromptReason::SaveVcd => "Save VCD file (default: dump.vcd)".into(),
+                            TextPromptReason::ChangeTrigger => {
+                                format!("Change trigger point [0-{}]", self.config.buffer_size)
+                            }
+                        };
 
-                f.render_widget(Clear, around);
-                let decoration = Block::default().title(title).borders(Borders::ALL);
-                f.render_widget(decoration, around);
+                        f.render_widget(Clear, around);
+                        let decoration = Block::default().title(title).borders(Borders::ALL);
+                        f.render_widget(decoration, around);
 
-                let center = Rect::new(
-                    around.x + 1,
-                    around.y + 1,
-                    around.width.saturating_sub(2),
-                    around.height.saturating_sub(2),
-                );
+                        let center = Rect::new(
+                            around.x + 1,
+                            around.y + 1,
+                            around.width.saturating_sub(2),
+                            around.height.saturating_sub(2),
+                        );
 
-                text_prompt.render(center, f, true);
+                        text_prompt.render(center, f, true);
+                    },
+                    Prompt::StopAutoExportPrompt(polar_prompt) => {
+                        let block = Block::bordered();
+
+                        let width = (size.width / 2).min(size.width);
+
+                        // +2 to account for the borders
+                        let height = polar_prompt.line_count(width) as u16 + 2;
+
+                        let area = Rect {
+                            x: size.x + size.width.div_ceil(2).saturating_sub(width / 2),
+                            y: size.y + size.height.div_ceil(2).saturating_sub(height / 2),
+                            width,
+                            height,
+                        };
+
+                        f.render_widget(Clear, area);
+
+                        (&block).render(area, f.buffer_mut());
+                        polar_prompt.render(block.inner(area), f.buffer_mut());
+                    },
+                }
             }
         });
     }
@@ -351,10 +383,10 @@ impl<'a> TuiSession<'a> {
                 KeyResponse::Nothing
             }
             (TuiState::Main, KeyCode::Char('t'), _) => {
-                self.state = TuiState::InPrompt(TextPromptState::new(
+                self.state = TuiState::InPrompt(Prompt::TextPrompt(TextPromptState::new(
                     Some("0"),
-                    PromptReason::ChangeTrigger,
-                ));
+                    TextPromptReason::ChangeTrigger,
+                )));
                 KeyResponse::Nothing
             }
             (TuiState::Main, KeyCode::Char('p'), _) => {
@@ -384,32 +416,43 @@ impl<'a> TuiSession<'a> {
                 KeyResponse::Nothing
             }
             (TuiState::Main, KeyCode::Char('v'), _) => {
-                self.state = TuiState::InPrompt(TextPromptState::new(
+                self.state = TuiState::InPrompt(Prompt::TextPrompt(TextPromptState::new(
                     Some("dump.vcd"),
-                    PromptReason::SaveVcd,
-                ));
+                    TextPromptReason::SaveVcd,
+                )));
                 KeyResponse::Nothing
             },
             (TuiState::Main, KeyCode::Char('e'), _) => {
                 if self.auto_export_session.is_some() {
-                    self.auto_export_session = None;
-                    self.log.push("Stopped auto-export session".to_string());
+                    let mut state = PolarPrompt::new(
+                        Paragraph::new("Stop the running auto-export session?")
+                            .wrap(Wrap { trim: true })
+                            .centered(),
+                        ("Yes".to_string(), "No".to_string()),
+                    );
+                    state.select(false);
+
+                    self.state = TuiState::InPrompt(Prompt::StopAutoExportPrompt(state));
                 } else {
                     self.state = TuiState::AutoExport(AutoExportState::new());
                 }
                 KeyResponse::Nothing
             },
-            (TuiState::InPrompt(_), KeyCode::Esc, _) => {
-                self.log.push("Cancelled save".to_string());
+            (TuiState::InPrompt(prompt), KeyCode::Esc, _) => {
+                if let Prompt::TextPrompt(text_prompt) = prompt {
+                    if text_prompt.reason == TextPromptReason::SaveVcd {
+                        self.log.push("Cancelled save".to_string());
+                    }
+                }
                 self.state = TuiState::Main;
                 KeyResponse::Nothing
             }
-            (TuiState::InPrompt(prompt), KeyCode::Enter, _) => {
+            (TuiState::InPrompt(Prompt::TextPrompt(prompt)), KeyCode::Enter, _) => {
                 // Handle the case of whenever a prompt gets completed
                 // I want to move this to a seperate function, however due to borrow limits I can't
                 // and that's kind of very annoying
                 let response = match prompt.reason {
-                    PromptReason::SaveVcd => {
+                    TextPromptReason::SaveVcd => {
                         if let Some(sample) = self.captured.last() {
                             if let Err(err) =
                                 write_to_vcd(sample, self.config, prompt.input.clone())
@@ -423,7 +466,7 @@ impl<'a> TuiSession<'a> {
                         }
                         KeyResponse::Nothing
                     }
-                    PromptReason::ChangeTrigger => match prompt.input.parse() {
+                    TextPromptReason::ChangeTrigger => match prompt.input.parse() {
                         Ok(n) if n > self.config.buffer_size as u32 => {
                             self.log
                                 .push("Invalid input; must be specified range".to_string());
@@ -456,10 +499,20 @@ impl<'a> TuiSession<'a> {
                 self.state = TuiState::Main;
                 response
             }
-            (TuiState::InPrompt(text_prompt), keycode, _) => {
+            (TuiState::InPrompt(Prompt::TextPrompt(text_prompt)), keycode, _) => {
                 text_prompt.handle_input(keycode);
                 KeyResponse::Nothing
-            }
+            },
+            (TuiState::InPrompt(Prompt::StopAutoExportPrompt(prompt)), _, _) => {
+                if let PolarPromptEvent::Consumed(Some(stop_auto_export)) = prompt.handle_key_event(&event) {
+                    if stop_auto_export {
+                        self.auto_export_session = None;
+                        self.log.push("Auto-export session stopped".to_string());
+                    }
+                    self.state = TuiState::Main;
+                };
+                KeyResponse::Nothing
+            },
             _ => KeyResponse::Nothing,
         };
 
