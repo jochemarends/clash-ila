@@ -9,8 +9,8 @@ use ratatui::{
 pub enum PolarPromptEvent {
     /// The terminal event was consumed.
     ///
-    /// Contains the confirmed option as `true` (positive) or `false` (negative), or `None` if the
-    /// terminal event did not result in a confirmation.
+    /// Contains the confirmed option as `true` (affirmative) or `false` (negative), or `None` if
+    /// the terminal event did not result in a confirmation.
     Consumed(Option<bool>),
 
     /// The terminal event was not consumed.
@@ -21,7 +21,7 @@ pub enum PolarPromptEvent {
 ///
 /// Consists of a message with a horizontal list presenting the two options.
 ///
-/// The left and right options correspond to the positive and negative answers, respectively.
+/// The left and right options correspond to the affirmative and negative answers, respectively.
 ///
 /// # Examples
 ///
@@ -61,9 +61,10 @@ pub struct PolarPrompt<'a> {
 impl<'a> PolarPrompt<'a> {
     /// Create a polar prompt with the given message and option labels.
     ///
-    /// The first label is for the positive option and the second label is for the negative option.
+    /// The first label is for the affirmative option and the second label is for the negative
+    /// option.
     ///
-    /// By default the positive option is selected.
+    /// By default the affirmative option is selected.
     pub fn new(message: Paragraph<'a>, labels: (String, String)) -> Self {
         PolarPrompt {
             message,
@@ -79,16 +80,16 @@ impl<'a> PolarPrompt<'a> {
 
     /// Select an option.
     ///
-    /// `true` corresponds to the positive option, and `false` to the negative option.
+    /// `true` corresponds to the affirmative option, and `false` to the negative option.
     pub fn select(&mut self, choice: bool) {
         self.selected = choice;
     }
 
     fn render_options(&self, area: Rect, buf: &mut Buffer) {
-        let [positive_area, negative_area] =
+        let [affirmative_area, negative_area] =
             Layout::horizontal([Constraint::Fill(1), Constraint::Fill(1)]).areas(area);
 
-        let (positive, negative) = if self.selected == true {
+        let (affirmative, negative) = if self.selected == true {
             (
                 Paragraph::new(Line::from_iter(["[", self.labels.0.as_str(), "]"])).centered().bold(),
                 Paragraph::new(Line::from_iter([" ", self.labels.1.as_str(), " "])).centered(),
@@ -100,7 +101,7 @@ impl<'a> PolarPrompt<'a> {
             )
         };
 
-        positive.render(positive_area, buf);
+        affirmative.render(affirmative_area, buf);
         negative.render(negative_area, buf);
     }
 
@@ -112,7 +113,7 @@ impl<'a> PolarPrompt<'a> {
 
     /// Handle input events.
     ///
-    /// Pressing the left or right arrow key navigates between the positive and negative options.
+    /// Pressing the left or right arrow key navigates between the affirmative and negative options.
     /// Pressing Enter confirms the selected option.
     pub fn handle_key_event(&mut self, event: &KeyEvent) -> PolarPromptEvent {
         match event {
