@@ -26,12 +26,26 @@
         }).extend clash-compiler.overlays.${compiler-version})."clashPackages-${compiler-version}";
 
         # Patch programs to be the correct version we want
-        overlay = final: prev: {
-          clash-ila = prev.developPackage {
-            root = ./ila;
-            overrides = _: _: final;
+        overlay = final: prev:
+          let
+            clash-cores-pkgs = clash-cores.overlays.${system}.default final prev;
+          in
+          clash-cores-pkgs // {
+            clash-cores = pkgs.haskell.lib.dontCheck clash-cores-pkgs.clash-cores;
+
+            clash-prelude = pkgs.haskell.lib.dontCheck prev.clash-prelude;
+
+            clash-shockwaves = pkgs.haskell.lib.dontCheck (final.callHackageDirect {
+              pkg = "clash-shockwaves";
+              ver = "1.0.1";
+              sha256 = "sha256-EeZ6lm83Uv/oO5LnDvC7Ii9rA10jLU0Xdj3IcWHv/n8=";
+            } {});
+
+            clash-ila = prev.developPackage {
+              root = ./ila;
+              overrides = _: _: final;
+            };
           };
-        } // clash-cores.overlays.${system}.default final prev;
 
         ila-cli = import ./ila-cli/Cargo.nix {
           nixpkgs = nixpkgs;
