@@ -97,7 +97,8 @@ library examples
   hs-source-dirs:
     examples
   build-depends:
-    clash-ila
+    clash-ila,
+    clash-shockwaves
   exposed-modules:
     ClashIlaDemo
     Domain

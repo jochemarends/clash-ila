@@ -1,3 +1,10 @@
 packages: */*.cabal
 
 write-ghc-environment-files: always
+
+source-repository-package
+  type: git
+  location: https://github.com/clash-lang/clash-shockwaves.git
+  tag: e542dc58926b78b158c6d5a5e384de5e06636aef
+  subdir:
+    clash-shockwaves
