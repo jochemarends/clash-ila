@@ -1,6 +1,6 @@
 use crate::cli::CommandOutput;
 use crate::cli_registers::IlaRegisters;
-use crate::config::IlaConfig;
+use crate::config::{IlaConfig, IlaSignals};
 use crate::predicates::PredicateOperation;
 use crate::wishbone::WbTransaction;
 use bitvec::field::BitField;
@@ -124,21 +124,20 @@ impl SignalCluster {
     }
 
     /// Interpret a stream of data as signals
-    pub fn from_data(config: &IlaConfig, input: &[u32]) -> SignalCluster {
-        let word_count = config.transaction_bit_count().div_ceil(32) as u32;
+    pub fn from_data(signals: &IlaSignals, input: &[u32]) -> SignalCluster {
+        let word_count = signals.transaction_bit_count().div_ceil(32) as u32;
         let bitvecs: Vec<BitVec<u8, Msb0>> = input
             .chunks(word_count as usize)
             .map(|chunk| {
                 chunk
                     .view_bits::<Msb0>()
                     .iter()
-                    .skip(chunk.len() * 32 - config.transaction_bit_count())
+                    .skip(chunk.len() * 32 - signals.transaction_bit_count())
                     .collect()
             })
             .collect();
 
-        let mut signals: Vec<Signal> = config
-            .signals
+        let mut signals: Vec<Signal> = signals
             .iter()
             .map(|signal| Signal {
                 name: signal.name.clone(),
@@ -184,6 +183,7 @@ pub enum RegisterOutput {
     CaptureOp(PredicateOperation),
     CaptureSelect(u32),
     SampleCount(u32),
+    OutputFrontBuffer(SignalCluster),
 }
 
 impl CommandOutput for bool {
@@ -219,6 +219,7 @@ impl CommandOutput for RegisterOutput {
             RegisterOutput::CaptureOp(predicate_operation) => predicate_operation.command_output(),
             RegisterOutput::CaptureSelect(select) => select.command_output(),
             RegisterOutput::SampleCount(amount) => amount.command_output(),
+            RegisterOutput::OutputFrontBuffer(signal_cluster) => signal_cluster.command_output(),
         }
     }
 }
@@ -234,8 +235,9 @@ impl IlaRegisters {
             IlaRegisters::SampleCount => (0x0000_0007, [true; 4]),
             IlaRegisters::Hash(_) => (0x0000_0002, [true; 4]),
 
-            IlaRegisters::StagedOutput(_) => (0x3300_0000, [true; 4]),
-            IlaRegisters::CommitOutput => (0x0000_0001, [false, false, true, false]),
+            IlaRegisters::OutputBackBuffer(_) => (0x3300_0000, [true; 4]),
+            IlaRegisters::OutputFrontBuffer => (0x3400_0000, [true; 4]),
+            IlaRegisters::OutputBufferSync => (0x0000_0001, [false, false, true, false]),
 
             IlaRegisters::TriggerMask(_) => (0x1000_0000, [true; 4]),
             IlaRegisters::TriggerCompare(_) => (0x1100_0000, [true; 4]),
@@ -264,11 +266,11 @@ impl IlaRegisters {
             IlaRegisters::TriggerPoint(_) => RegisterOutput::None,
 
             IlaRegisters::TriggerMask(ReadWrite::Read(_)) => {
-                RegisterOutput::TriggerMask(SignalCluster::from_data(ila, output))
+                RegisterOutput::TriggerMask(SignalCluster::from_data(&ila.signals, output))
             }
             IlaRegisters::TriggerMask(ReadWrite::Write(_)) => RegisterOutput::None,
             IlaRegisters::TriggerCompare(ReadWrite::Read(_)) => {
-                RegisterOutput::TriggerCompare(SignalCluster::from_data(ila, output))
+                RegisterOutput::TriggerCompare(SignalCluster::from_data(&ila.signals, output))
             }
             IlaRegisters::TriggerCompare(ReadWrite::Write(_)) => RegisterOutput::None,
             IlaRegisters::TriggerOp(ReadWrite::Read(_)) => match output.first() {
@@ -287,14 +289,17 @@ impl IlaRegisters {
                 let hash_matches = output.first().map(|hash| hash == compare).unwrap_or(false);
                 RegisterOutput::Hash(hash_matches)
             },
-            IlaRegisters::StagedOutput(_) => RegisterOutput::None,
-            IlaRegisters::CommitOutput => RegisterOutput::None,
+            IlaRegisters::OutputBackBuffer(_) => RegisterOutput::None,
+            IlaRegisters::OutputBufferSync => RegisterOutput::None,
+            IlaRegisters::OutputFrontBuffer => {
+                RegisterOutput::OutputFrontBuffer(SignalCluster::from_data(&ila.outputs, output))
+            },
             IlaRegisters::CaptureMask(ReadWrite::Read(_)) => {
-                RegisterOutput::CaptureMask(SignalCluster::from_data(ila, output))
+                RegisterOutput::CaptureMask(SignalCluster::from_data(&ila.signals, output))
             }
             IlaRegisters::CaptureMask(ReadWrite::Write(_)) => RegisterOutput::None,
             IlaRegisters::CaptureCompare(ReadWrite::Read(_)) => {
-                RegisterOutput::CaptureCompare(SignalCluster::from_data(ila, output))
+                RegisterOutput::CaptureCompare(SignalCluster::from_data(&ila.signals, output))
             }
             IlaRegisters::CaptureCompare(ReadWrite::Write(_)) => RegisterOutput::None,
             IlaRegisters::CaptureOp(ReadWrite::Read(_)) => match output.first() {
@@ -314,7 +319,7 @@ impl IlaRegisters {
             },
 
             IlaRegisters::PerformRead(_) => {
-                RegisterOutput::BufferContent(SignalCluster::from_data(ila, output))
+                RegisterOutput::BufferContent(SignalCluster::from_data(&ila.signals, output))
             }
             IlaRegisters::WordIndex(_) => RegisterOutput::None,
         }
@@ -322,7 +327,7 @@ impl IlaRegisters {
 
     /// Convert the register into a `WbTransaction`, which can then be converted into wishbone
     /// records
-    pub fn to_wb_transaction(&self, _ila: &IlaConfig) -> WbTransaction {
+    pub fn to_wb_transaction(&self, ila: &IlaConfig) -> WbTransaction {
         let (addr, byte_select) = self.address();
         match self {
             IlaRegisters::Capture => WbTransaction::new_reads(byte_select, addr, vec![0]),
@@ -378,7 +383,7 @@ impl IlaRegisters {
                 WbTransaction::new_reads(byte_select, addr, indices.clone())
             }
             IlaRegisters::Hash(_) => WbTransaction::new_reads(byte_select, addr, vec![0]),
-            IlaRegisters::StagedOutput(bytes) => {
+            IlaRegisters::OutputBackBuffer(bytes) => {
                 let words: Vec<u32> = bytes
                     .chunks(4)
                     .map(|chunk| {
@@ -389,7 +394,11 @@ impl IlaRegisters {
                     .collect();
                 WbTransaction::new_writes(byte_select, addr, words)
             }
-            IlaRegisters::CommitOutput => WbTransaction::new_writes(byte_select, addr, vec![0]),
+            IlaRegisters::OutputFrontBuffer => {
+                let word_count = ila.outputs.iter().map(|s| s.width).sum::<usize>().div_ceil(32) as u32;
+                WbTransaction::new_reads(byte_select, addr, (0..word_count).collect())
+            }
+            IlaRegisters::OutputBufferSync => WbTransaction::new_writes(byte_select, addr, vec![0]),
             IlaRegisters::CaptureMask(ReadWrite::Write(items)) => {
                 let words: Vec<u32> = items
                     .chunks(4)
@@ -466,7 +475,7 @@ where
     T: IoRead + IoWrite,
 {
     let indices: Vec<u32> = range.collect();
-    let words_per_index = ila.transaction_bit_count().div_ceil(32) as u32;
+    let words_per_index = ila.signals.transaction_bit_count().div_ceil(32) as u32;
 
     let mut execute_reg = |output: &mut Vec<u32>, register: IlaRegisters| -> Option<()> {
         for record in register.to_wb_transaction(ila).to_records() {

@@ -64,7 +64,8 @@ topLogicUart baud rx = (tx, not <$> red, not <$> green, not <$> blue)
         -- ^ Signals to be emitted by the ILA. These are controllable via the CLI
         }
   (tx, outputs) = snd $ demoIla (rx, ((),()))
-  (red, green, blue) = unbundle $ (\((((), r), g), b) -> (r, g, b)) <$> outputs
+  (red, green, blue) = unbundle $ (\(r, (g, (b, ()))) -> (r, g, b)) <$> outputs
+
 
 -- | The top entity
 topEntity ::

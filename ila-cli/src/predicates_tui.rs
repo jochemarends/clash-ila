@@ -553,7 +553,7 @@ impl State<'_> {
                 let compare: Vec<Signal> = self
                     .compare_state
                     .iter()
-                    .zip(&ila.signals)
+                    .zip(ila.signals.iter())
                     .filter_map(|(input_state, signal)| {
                         NumericState::immediate_parse(&input_state.input)
                             .ok()
@@ -565,7 +565,7 @@ impl State<'_> {
                 let mask: Vec<Signal> = self
                     .mask_state
                     .iter()
-                    .zip(&ila.signals)
+                    .zip(ila.signals.iter())
                     .filter_map(|(input_state, signal)| {
                         NumericState::immediate_parse(&input_state.input)
                             .ok()

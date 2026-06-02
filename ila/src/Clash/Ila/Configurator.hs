@@ -527,7 +527,7 @@ instance
   ) =>
   KnownOutSigList ('(a, name) ': xs)
   where
-  type OutSigTuple ('(a, name) ': xs) = (OutSigTuple xs, a)
+  type OutSigTuple ('(a, name) ': xs) = (a, OutSigTuple xs)
   outSigListToGenSignals = genSignal :> outSigListToGenSignals @xs
    where
     genSignal = GenSignal{name = symbolVal (Proxy @name), width = natToNum @(BitSize a)}

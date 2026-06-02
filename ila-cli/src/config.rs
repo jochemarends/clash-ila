@@ -10,22 +10,13 @@ pub struct IlaSignal {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct IlaConfig {
-    pub toplevel: String,
-    #[serde(rename = "bufferSize")]
-    pub buffer_size: usize,
-    pub hash: u32,
-    pub signals: Vec<IlaSignal>,
-    pub outputs: Vec<IlaSignal>,
-    #[serde(rename = "triggerNames")]
-    pub trigger_names: Vec<String>,
-}
+pub struct IlaSignals(Vec<IlaSignal>);
 
-impl IlaConfig {
+impl IlaSignals {
     /// How many bits does it take to get one sample of all signals?
     #[inline]
     pub fn transaction_bit_count(&self) -> usize {
-        self.signals.iter().map(|signal| signal.width).sum()
+        self.0.iter().map(|signal| signal.width).sum()
     }
 
     /// How many bytes does it take to get one sample of all signals?
@@ -34,13 +25,26 @@ impl IlaConfig {
     pub fn transaction_byte_count(&self) -> usize {
         self.transaction_bit_count().div_ceil(8)
     }
+}
 
-    /// How many bytes do we expect a datapacket to contain?
-    #[inline]
-    #[allow(unused)]
-    pub fn expected_byte_count(&self) -> usize {
-        self.buffer_size * self.transaction_byte_count()
+impl std::ops::Deref for IlaSignals {
+    type Target = [IlaSignal];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0.as_slice()
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IlaConfig {
+    pub toplevel: String,
+    #[serde(rename = "bufferSize")]
+    pub buffer_size: usize,
+    pub hash: u32,
+    pub signals: IlaSignals,
+    pub outputs: IlaSignals,
+    #[serde(rename = "triggerNames")]
+    pub trigger_names: Vec<String>,
 }
 
 #[derive(Args, Debug)]

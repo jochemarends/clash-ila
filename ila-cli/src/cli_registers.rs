@@ -367,10 +367,14 @@ where
 pub enum RegisterSubcommand {
     /// Register containing the capture state of the ILA
     Capture(ReadWriteArgument<Unsupported, Unsupported>),
-    /// The buffer for staged output values
-    StagedOutput(ReadWriteArgument<Unsupported, ByteStream>),
-    // Register for synchronizing the ILA's output signals with the staged output buffer
-    CommitOutput(ReadWriteArgument<Unsupported, Unsupported>),
+    /// Write to the ILA's output back buffer
+    OutputBackBuffer(ReadWriteArgument<Unsupported, ByteStream>),
+    /// Read from the ILA's output front buffer. When the output signals combined are larger than 32
+    /// bits, a read takes more than one clock cycle and their value may change between these
+    /// cycles.
+    OutputFrontBuffer(ReadWriteArgument<Unsupported, Unsupported>),
+    /// Synchronize the ILA's output back buffer with the front buffer
+    OutputBufferSync(ReadWriteArgument<Unsupported, Unsupported>),
     /// Register re-arming the trigger (and clear the buffer)
     TriggerReset(ReadWriteArgument<Unsupported, Unsupported>),
     /// Checks the ILA for its triggered status

@@ -195,7 +195,8 @@ A lot of the register map is also exposed as a memory map, with the following la
 | 0x3100_0000 | 0b1111     | Word index            | Write'3     |
 | 0x3200_0000 | 0b1111     | Perform read          | Read'4      |
 | 0x3300_0000 | 0b1111     | Output back buffer    | Write'5     |
-| 0x0000_0001 | 0b0010     | Output buffer sync    | Write'6     |
+| 0x3400_0000 | 0b1111     | Output front buffer   | Read'6      |
+| 0x0000_0001 | 0b0010     | Output buffer sync    | Write'7     |
 
 '1: Reading from this address will return wether or not the ILA has been triggered or not
 '2: Each bit is for one predicate
@@ -206,7 +207,9 @@ A lot of the register map is also exposed as a memory map, with the following la
     address being accessed as long as it is within 0x3200_0000 0x32ff_ffff.
 '5: Back buffer for the ILA's output signals, if any. Writing to address 0x3300_0000 + N sets the
     Nth word of this buffer.
-'6: Synchronizes the ILA's front output buffer with the back output buffer upon writing.
+'6: Front buffer for the ILA's output signals, if any. Reading from address 0x3400_0000 + N gets
+    the Nth word of this buffer.
+'7: Synchronizes the ILA's front output buffer with the back output buffer upon writing.
 
 Future optimisation: introduce `Buffer length` register to perform multiple reads automatically
 without requiring manual reads. This will require a somewhat large overhaul of the TUI.
@@ -288,6 +291,8 @@ readIlaMM address 0b1111 rm
       Just $ getWord rm.captureMask index
   | testBits address 0x2100_0000 0xff00_0000 =
       Just $ getWord rm.captureCompare index
+  | testBits address 0x3400_0000 0xff00_0000 =
+      Just $ getWord rm.outputBuffer.front (resize index)
  where
   index = unpack . resize $ address .&. 0x00ff_ffff
 readIlaMM _ _ _ = Nothing
@@ -541,7 +546,7 @@ ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing
     -- Writes are done in one clock cycle, but wishbone timing requires us to delay it by one clock cycle
     out =
       ( register emptyWishboneS2M $ liftA2 reply delayedAck readManager
-      , unpack <$> ilaRM.outputBuffer.front
+      , (unpack . v2bv . reverse . bv2v . unpack) <$> ilaRM.outputBuffer.front
       )
 
 {- | The ILA component itself

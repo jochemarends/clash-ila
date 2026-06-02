@@ -363,7 +363,18 @@ impl<'a> TuiSession<'a> {
                     self.log.push("Unable to drive output signals".to_owned());
                     self.log.push("The ILA has no output signals".to_owned());
                 } else {
-                    self.state = TuiState::OutputSignals(OutputSignalsState::new(self.config));
+                    // Try to sample the output signals and use them to initialize the input fields
+                    // for the output signals page.
+                    match perform_register_operation(tx_port, self.config, &IlaRegisters::OutputFrontBuffer) {
+                        Ok(RegisterOutput::OutputFrontBuffer(ref init)) => {
+                            match OutputSignalsState::new(self.config, init) {
+                                Ok(state) => self.state = TuiState::OutputSignals(state),
+                                Err(err) => self.log.push(format!("Error: {err}")),
+                            }
+                        },
+                        Ok(_) => self.log.push("Unexpected output when reading the output buffer".to_string()),
+                        Err(err) => self.log.push(format!("Error: {err}")),
+                    };
                 }
                 KeyResponse::Nothing
             }
