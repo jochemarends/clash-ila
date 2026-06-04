@@ -69,7 +69,7 @@ impl IlaPredicate {
     where
         T: IoWrite + IoRead,
     {
-        let sample_word_width = ila.signals.transaction_bit_count().div_ceil(32);
+        let sample_word_width = ila.inputs.transaction_bit_count().div_ceil(32);
 
         match target {
             PredicateTarget::Trigger => {

@@ -401,8 +401,9 @@ pub enum RegisterSubcommand {
     CaptureSelect(ReadWriteArgument<Flag, Word>),
     /// The amount of samples current stored in the buffer
     SampleCount(ReadWriteArgument<Unsupported, Unsupported>),
-    /// Selects what word from the buffer entry to read (words are 32 bits)
-    WordIndex(ReadWriteArgument<Unsupported, Word>),
-    /// Read out samples from the ILA buffer
-    PerformRead(ReadWriteArgument<Indices, Unsupported>),
+    /// Controls what 32-bit word to read for each sample from the input buffer.
+    InputWordIndex(ReadWriteArgument<Unsupported, Word>),
+    /// Reads the by [`RegisterSubcommand::InputWordIndex`] controlled word for each sample
+    /// associated with the indices.
+    InputBuffer(ReadWriteArgument<Indices, Unsupported>),
 }

@@ -41,7 +41,7 @@ pub struct IlaConfig {
     #[serde(rename = "bufferSize")]
     pub buffer_size: usize,
     pub hash: u32,
-    pub signals: IlaSignals,
+    pub inputs: IlaSignals,
     pub outputs: IlaSignals,
     #[serde(rename = "triggerNames")]
     pub trigger_names: Vec<String>,

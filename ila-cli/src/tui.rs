@@ -37,7 +37,7 @@ const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
   R      ---   Toggle automatic reading of samples
   r      ---   Re-arm trigger
   a      ---   Toggle auto trigger re-arm
-  v      ---   Write signals to VCD dump
+  v      ---   Write samples to VCD dump
   o      ---   Drive output signals
 "#;
 
@@ -359,7 +359,7 @@ impl<'a> TuiSession<'a> {
                 KeyResponse::Nothing
             }
             (TuiState::Main, KeyCode::Char('o'), _) => {
-                if self.config.signals.len() == 0 {
+                if self.config.inputs.len() == 0 {
                     self.log.push("Unable to drive output signals".to_owned());
                     self.log.push("The ILA has no output signals".to_owned());
                 } else {

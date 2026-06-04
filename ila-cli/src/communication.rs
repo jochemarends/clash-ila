@@ -249,8 +249,8 @@ impl IlaRegisters {
             IlaRegisters::CaptureOp(_) => (0x0000_0005, [false, false, false, true]),
             IlaRegisters::CaptureSelect(_) => (0x0000_0006, [true; 4]),
 
-            IlaRegisters::WordIndex(_) => (0x3100_0000, [true; 4]),
-            IlaRegisters::PerformRead(_) => (0x3200_0000, [true; 4]),
+            IlaRegisters::InputWordIndex(_) => (0x3100_0000, [true; 4]),
+            IlaRegisters::InputBuffer(_) => (0x3200_0000, [true; 4]),
         }
     }
 
@@ -266,11 +266,11 @@ impl IlaRegisters {
             IlaRegisters::TriggerPoint(_) => RegisterOutput::None,
 
             IlaRegisters::TriggerMask(ReadWrite::Read(_)) => {
-                RegisterOutput::TriggerMask(SignalCluster::from_data(&ila.signals, output))
+                RegisterOutput::TriggerMask(SignalCluster::from_data(&ila.inputs, output))
             }
             IlaRegisters::TriggerMask(ReadWrite::Write(_)) => RegisterOutput::None,
             IlaRegisters::TriggerCompare(ReadWrite::Read(_)) => {
-                RegisterOutput::TriggerCompare(SignalCluster::from_data(&ila.signals, output))
+                RegisterOutput::TriggerCompare(SignalCluster::from_data(&ila.inputs, output))
             }
             IlaRegisters::TriggerCompare(ReadWrite::Write(_)) => RegisterOutput::None,
             IlaRegisters::TriggerOp(ReadWrite::Read(_)) => match output.first() {
@@ -295,11 +295,11 @@ impl IlaRegisters {
                 RegisterOutput::OutputFrontBuffer(SignalCluster::from_data(&ila.outputs, output))
             },
             IlaRegisters::CaptureMask(ReadWrite::Read(_)) => {
-                RegisterOutput::CaptureMask(SignalCluster::from_data(&ila.signals, output))
+                RegisterOutput::CaptureMask(SignalCluster::from_data(&ila.inputs, output))
             }
             IlaRegisters::CaptureMask(ReadWrite::Write(_)) => RegisterOutput::None,
             IlaRegisters::CaptureCompare(ReadWrite::Read(_)) => {
-                RegisterOutput::CaptureCompare(SignalCluster::from_data(&ila.signals, output))
+                RegisterOutput::CaptureCompare(SignalCluster::from_data(&ila.inputs, output))
             }
             IlaRegisters::CaptureCompare(ReadWrite::Write(_)) => RegisterOutput::None,
             IlaRegisters::CaptureOp(ReadWrite::Read(_)) => match output.first() {
@@ -318,10 +318,10 @@ impl IlaRegisters {
                 None => RegisterOutput::None,
             },
 
-            IlaRegisters::PerformRead(_) => {
-                RegisterOutput::BufferContent(SignalCluster::from_data(&ila.signals, output))
+            IlaRegisters::InputBuffer(_) => {
+                RegisterOutput::BufferContent(SignalCluster::from_data(&ila.inputs, output))
             }
-            IlaRegisters::WordIndex(_) => RegisterOutput::None,
+            IlaRegisters::InputWordIndex(_) => RegisterOutput::None,
         }
     }
 
@@ -376,10 +376,10 @@ impl IlaRegisters {
             IlaRegisters::TriggerSelect(ReadWrite::Read(_)) => {
                 WbTransaction::new_reads(byte_select, addr, vec![0])
             }
-            IlaRegisters::WordIndex(index) => {
+            IlaRegisters::InputWordIndex(index) => {
                 WbTransaction::new_writes(byte_select, addr, vec![*index])
             }
-            IlaRegisters::PerformRead(indices) => {
+            IlaRegisters::InputBuffer(indices) => {
                 WbTransaction::new_reads(byte_select, addr, indices.clone())
             }
             IlaRegisters::Hash(_) => WbTransaction::new_reads(byte_select, addr, vec![0]),
@@ -475,7 +475,7 @@ where
     T: IoRead + IoWrite,
 {
     let indices: Vec<u32> = range.collect();
-    let words_per_index = ila.signals.transaction_bit_count().div_ceil(32) as u32;
+    let words_per_index = ila.inputs.transaction_bit_count().div_ceil(32) as u32;
 
     let mut execute_reg = |output: &mut Vec<u32>, register: IlaRegisters| -> Option<()> {
         for record in register.to_wb_transaction(ila).to_records() {
@@ -489,8 +489,8 @@ where
     let buffer_words: Vec<Vec<u32>> = (0..words_per_index)
         .filter_map(|word_index| {
             let mut output: Vec<u32> = Vec::new();
-            execute_reg(&mut throw_away, IlaRegisters::WordIndex(word_index))?;
-            execute_reg(&mut output, IlaRegisters::PerformRead(indices.clone()))?;
+            execute_reg(&mut throw_away, IlaRegisters::InputWordIndex(word_index))?;
+            execute_reg(&mut output, IlaRegisters::InputBuffer(indices.clone()))?;
             Some(output)
         })
         .collect();
@@ -507,5 +507,5 @@ where
         }
     }
 
-    Ok(IlaRegisters::PerformRead(indices).translate_output(ila, &output))
+    Ok(IlaRegisters::InputBuffer(indices).translate_output(ila, &output))
 }

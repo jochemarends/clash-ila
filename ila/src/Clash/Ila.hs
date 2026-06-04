@@ -203,8 +203,8 @@ A lot of the register map is also exposed as a memory map, with the following la
 '3: Due to the etherbone requiring packets be split in packets of 32 bits, reading the memory
     requires the end user to provide two indices. The specific buffer index the user would like to
     read and which word of that buffer entry.
-'4: Actually performs the memory reads from the internal ILA buffer, the buffer index is the
-    address being accessed as long as it is within 0x3200_0000 0x32ff_ffff.
+'4: Actually performs the memory reads from the internal ILA buffer for input signals. The buffer
+    index is the address being accessed as long as it is within 0x3200_0000 0x32ff_ffff.
 '5: Back buffer for the ILA's output signals, if any. Writing to address 0x3300_0000 + N sets the
     Nth word of this buffer.
 '6: Front buffer for the ILA's output signals, if any. Reading from address 0x3400_0000 + N gets

@@ -447,7 +447,7 @@ impl State<'_> {
                 }
                 checkbox
             },
-            signals: &ila.signals,
+            signals: &ila.inputs,
             mask_compare_cursor_position: 0,
             mask_state: signals_to_prompts(predicate.mask),
             compare_state: signals_to_prompts(predicate.compare),
@@ -553,7 +553,7 @@ impl State<'_> {
                 let compare: Vec<Signal> = self
                     .compare_state
                     .iter()
-                    .zip(ila.signals.iter())
+                    .zip(ila.inputs.iter())
                     .filter_map(|(input_state, signal)| {
                         NumericState::immediate_parse(&input_state.input)
                             .ok()
@@ -565,7 +565,7 @@ impl State<'_> {
                 let mask: Vec<Signal> = self
                     .mask_state
                     .iter()
-                    .zip(ila.signals.iter())
+                    .zip(ila.inputs.iter())
                     .filter_map(|(input_state, signal)| {
                         NumericState::immediate_parse(&input_state.input)
                             .ok()

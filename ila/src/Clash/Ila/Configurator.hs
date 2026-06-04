@@ -393,7 +393,7 @@ signalInfoBBF _ _ args _ = view tcCache >>= go
               , toList sigInfo
               )
       , -- The reverse is needed as the polyvariadic function builds up the vector in reverse order
-        signals = P.reverse $ toList $ toGenSignal <$> sigInfo
+        inputs = P.reverse $ toList $ toGenSignal <$> sigInfo
       , triggerNames = toList triggerNames
       , outputs = toList $ toGenSignal <$> outputs
       }
@@ -478,7 +478,7 @@ data GenIla = GenIla
   { toplevel :: String
   , bufferSize :: Word32
   , hash :: Word32
-  , signals :: [GenSignal]
+  , inputs :: [GenSignal]
   , outputs :: [GenSignal]
   , triggerNames :: [String]
   }
