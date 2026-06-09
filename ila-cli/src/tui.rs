@@ -303,7 +303,7 @@ impl<'a> TuiSession<'a> {
 
                         f.render_widget(Clear, area);
 
-                        (&block).render(area, f.buffer_mut());
+                        block.render_ref(area, f.buffer_mut());
                         polar_prompt.render(block.inner(area), f.buffer_mut());
                     },
                 }

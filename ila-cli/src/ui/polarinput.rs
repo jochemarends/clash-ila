@@ -26,29 +26,29 @@ pub enum PolarPromptEvent {
 /// # Examples
 ///
 /// ```
-///  use ratatui::{prelude::*, widgets::{Block, Paragraph, WidgetRef}};
-///  use crate::ui::polarinput::PolarPrompt;
-//
-///  let block = Block::bordered();
-//
-///  let prompt = PolarPrompt::new(
-///      Paragraph::new("Make a coffee?").centered(),
-///      ("Confirm".to_string(), "Cancel".to_string()),
-///  );
-//
-///  let width = 40u16;
-///  let area = Rect {x: 0, y: 0, width, height: (prompt.line_count(width) + 2) as u16};
-///  let mut buf = Buffer::empty(area);
-//
-///  block.render_ref(area, &mut buf);
-///  prompt.render_ref(block.inner(area), &mut buf);
-//
-///  // Renders
-///  // ┌──────────────────────────────────────┐
-///  // │            Make a coffee?            │
-///  // │                                      │
-///  // │     [Confirm]           Cancel       │
-///  // └──────────────────────────────────────┘
+/// use ratatui::{prelude::*, widgets::{Block, Paragraph, WidgetRef}};
+/// use crate::ui::polarinput::PolarPrompt;
+///
+/// let block = Block::bordered();
+///
+/// let prompt = PolarPrompt::new(
+///     Paragraph::new("Make a coffee?").centered(),
+///     ("Confirm".to_string(), "Cancel".to_string()),
+/// );
+///
+/// let width = 40u16;
+/// let area = Rect { x: 0, y: 0, width, height: (prompt.line_count(width) + 2) as u16 };
+/// let mut buf = Buffer::empty(area);
+///
+/// block.render_ref(area, &mut buf);
+/// prompt.render_ref(block.inner(area), &mut buf);
+///
+/// // Renders
+/// // ┌──────────────────────────────────────┐
+/// // │            Make a coffee?            │
+/// // │                                      │
+/// // │     [Confirm]           Cancel       │
+/// // └──────────────────────────────────────┘
 /// ```
 #[derive(Debug, Clone)]
 pub struct PolarPrompt<'a> {
