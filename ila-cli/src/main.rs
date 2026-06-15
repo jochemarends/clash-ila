@@ -14,6 +14,8 @@ mod cli;
 mod cli_registers;
 mod export;
 mod output_signals_tui;
+mod auto_export;
+mod auto_export_tui;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]

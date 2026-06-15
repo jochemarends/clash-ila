@@ -92,6 +92,11 @@ impl Listbox {
         self.selected
     }
 
+    /// Get the items of the listbox
+    pub fn items(&self) -> &[String] {
+        &self.items
+    }
+
     /// Manages input given to this widget
     ///
     /// Returns if the input has been 'consumed' by the function
