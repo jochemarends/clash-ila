@@ -125,7 +125,7 @@ impl<'a> TuiSession<'a> {
     /// Create a new TUI session associated with a certain IlaConfig
     ///
     /// * `config` - The ILA configuration the TUI should use to properly communicate with the ILA
-    pub fn new(config: &'a IlaConfig, device_path: &Path) -> Result<TuiSession<'a>, io::Error> {
+    pub fn new(config: &'a IlaConfig, device_path: &Path, auto_export_session: Option<AutoExportSession>) -> Result<TuiSession<'a>, io::Error> {
         enable_raw_mode()?;
 
         let mut stdout = io::stdout();
@@ -144,7 +144,7 @@ impl<'a> TuiSession<'a> {
             last_trigger_check: Instant::now(),
             auto_reset: false,
             device_path: device_path.display().to_string(),
-            auto_export_session: None,
+            auto_export_session: auto_export_session,
         })
     }
 
@@ -225,7 +225,7 @@ impl<'a> TuiSession<'a> {
                             " RUNNING".bold().green(),
                             format!(
                                 " | file: '{}' | mode: {} | duration: {}",
-                                session.config().file_name,
+                                session.config().path.file_name().and_then(|s| s.to_str()).unwrap_or("?"),
                                 session.config().mode,
                                 {
                                     let seconds = session.started_at().elapsed().as_secs();

@@ -25,7 +25,7 @@ pub fn write_to_vcd<P: AsRef<Path>>(
     let mut vcd_config = VcdWriterConfig::with_module(config.toplevel.clone());
 
     for signal in &signals.cluster {
-        vcd_config.add_wire(signal.name.to_string(), signal.width);
+        vcd_config = vcd_config.add_wire(signal.name.to_string(), signal.width);
     }
 
     let mut vcd_writer = vcd_config.writer(writer);
@@ -50,11 +50,11 @@ fn unknown_bits(width: usize) -> impl Iterator<Item = vcd::Value> {
 ///
 /// let file = File::create("dump.vcd").unwrap();
 ///
-/// let mut vcd_writer = VcdWriterConfig::with_module("mux")
-///     .add_wire("a", 8)
-///     .add_wire("b", 8)
-///     .add_wire("select", 1)
-///     .add_wire("output", 8)
+/// let mut vcd_writer = VcdWriterConfig::with_module("mux".to_string())
+///     .add_wire("a".to_string(), 8)
+///     .add_wire("b".to_string(), 8)
+///     .add_wire("select".to_string(), 1)
+///     .add_wire("output".to_string(), 8)
 ///     .writer(file);
 /// ```
 pub struct VcdWriterConfig {
@@ -74,7 +74,7 @@ impl VcdWriterConfig {
     /// Adds a wire with the given name and width.
     ///
     /// The wire will be added to the module associated with this configuration.
-    pub fn add_wire(&mut self, name: String, width: usize) -> &mut Self {
+    pub fn add_wire(mut self, name: String, width: usize) -> Self {
         let var_id = self.next_var_id();
         let var = vcd::Var::new(vcd::VarType::Wire, width as u32, var_id, name, None);
         self.vars.push(var);
@@ -205,5 +205,139 @@ impl<W: IoWrite> VcdWriter<W> {
     /// Get a mutable reference to the underlying writer.
     pub fn writer_mut(&mut self) -> &mut W {
         self.inner.writer()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bitvec::prelude::*;
+
+    use crate::{communication::Signal};
+
+    use super::*;
+
+    #[test]
+    #[should_panic]
+    fn write_empty_cluster() {
+        let mut writer = VcdWriterConfig::with_module("mux".to_string())
+            .add_wire("a".to_string(), 8)
+            .add_wire("b".to_string(), 8)
+            .add_wire("select".to_string(), 1)
+            .add_wire("output".to_string(), 8)
+            .writer(std::io::sink());
+
+        let cluster = SignalCluster {
+            cluster: vec![],
+            timestamp: std::time::Duration::ZERO,
+        };
+
+        writer.write_cluster(&cluster).unwrap();
+    }
+
+    #[test]
+    // After writing a preamble, the VCD should contain a module with the correct name and
+    // variables.
+    fn write_preamble() {
+        let mut writer = VcdWriterConfig::with_module("toplevel".to_string())
+            .add_wire("a".to_string(), 1)
+            .add_wire("b".to_string(), 2)
+            .add_wire("c".to_string(), 0)
+            .writer(Vec::<u8>::new());
+
+        writer.write_preamble().unwrap();
+
+        let cursor = std::io::Cursor::new(writer.writer_mut());
+
+        let mut parser = vcd::Parser::new(cursor);
+
+        let header = parser.parse_header().unwrap();
+
+        let scope = match header.items.as_slice() {
+            [vcd::ScopeItem::Scope(scope)] => scope,
+            _ => panic!("expected a single scope"),
+        };
+
+        let mut vars: Vec<_> = scope.items.iter().filter_map(|item| match item {
+            vcd::ScopeItem::Var(var) => Some((&var.reference, var.size)),
+            _ => None,
+        }).collect();
+
+        assert_eq!(scope.identifier, "toplevel");
+
+        assert_eq!(
+            vars.sort(),
+            vec![
+                ("a", 1),
+                ("b", 2),
+                ("c", 0),
+            ].sort(),
+        );
+    }
+
+    // When writing multiple signals and not all have an equal number of samples, the ones with
+    // fewer samples should get with undefined.
+    #[test]
+    fn pad_shorter_samples() {
+        let mut writer = VcdWriterConfig::with_module("toplevel".to_string())
+            .add_wire("a".to_string(), 1)
+            .add_wire("b".to_string(), 1)
+            .writer(Vec::<u8>::new());
+
+        // Make a cluster where one signal has more samples.
+        let cluster = SignalCluster {
+            cluster: vec![
+                Signal {
+                    name: String::new(),
+                    width: 1,
+                    samples: vec![
+                        bitvec![u8, Msb0; 1],
+                        bitvec![u8, Msb0; 1],
+                        bitvec![u8, Msb0; 0],
+                    ],
+                },
+                Signal {
+                    name: String::new(),
+                    width: 1,
+                    samples: vec![
+                        bitvec![u8, Msb0; 1],
+                    ],
+                },
+            ],
+            timestamp: std::time::Duration::ZERO,
+        };
+
+        writer.write_cluster(&cluster).unwrap();
+
+        let cursor = std::io::Cursor::new(writer.writer_mut());
+
+        // Parse the generated VCD.
+        let parser = vcd::Parser::new(cursor);
+
+        type Samples = Vec<(vcd::IdCode, vcd::Vector)>;
+
+        let (samples_a, samples_b): (Samples, Samples) = parser.into_iter()
+            .filter_map(|cmd| match cmd {
+                Ok(vcd::Command::ChangeVector(id, vec)) => Some((id, vec)),
+                _ => None,
+            })
+            .partition(|(id, _)| *id == IdCode::FIRST);
+
+        assert_eq!(
+            samples_a.iter().map(|(_, sample)| sample.iter().collect::<Vec<_>>()).collect::<Vec<_>>(),
+            vec![
+                vec![vcd::Value::V1],
+                vec![vcd::Value::V1],
+                vec![vcd::Value::V0],
+            ],
+        );
+
+        assert_eq!(
+            samples_b.iter().map(|(_, sample)| sample.iter().collect::<Vec<_>>()).collect::<Vec<_>>(),
+            vec![
+                vec![vcd::Value::V1],
+                vec![vcd::Value::X],
+                vec![vcd::Value::X],
+            ],
+        );
     }
 }

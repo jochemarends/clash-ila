@@ -1,6 +1,7 @@
 //! TUI state and logic for auto-exporting samples as VCD
 
 use std::io::Stdout;
+use std::path::PathBuf;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use ratatui::widgets::{Borders, Padding, Paragraph, Wrap};
@@ -140,7 +141,10 @@ impl State {
                     return AutoExportEventResponse::Nothing;
                 };
 
-                AutoExportEventResponse::MainMenu(Some(AutoExportConfig { file_name, mode, }))
+                AutoExportEventResponse::MainMenu(Some(AutoExportConfig {
+                    path: PathBuf::from(file_name),
+                    mode,
+                }))
             },
             _ => {
                 self.handle_input(event);

@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::auto_export::AutoExportMode;
+use crate::auto_export::{AutoExportConfig, AutoExportMode, AutoExportSession};
 use crate::communication::{RegisterOutput, perform_buffer_reads, perform_register_operation};
 use crate::cli_registers::IlaRegisters;
 use crate::config::ConfigMethod;
@@ -217,6 +217,19 @@ pub struct TuiArgs {
 
     #[arg(short, long, default_value_t = 115200, help = "Sets baud rate")]
     baud: u32,
+
+    #[arg(
+        long = "auto-export",
+        help = "If specified, an auto-export session will be started with this path",
+    )]
+    auto_export_path: Option<PathBuf>,
+
+    #[arg(
+        long = "auto-export-mode",
+        help = "The mode to be used when --auto-export is specified",
+        default_value_t = AutoExportMode::Append,
+    )]
+    auto_export_mode: AutoExportMode,
 }
 
 impl ParseSubcommand for TuiArgs {
@@ -239,7 +252,13 @@ impl ParseSubcommand for TuiArgs {
             }
         }
 
-        let Ok(mut session) = TuiSession::new(&config, &self.port) else {
+        let auto_export_session = self.auto_export_path
+            .map(|path| AutoExportSession::new(
+                AutoExportConfig { path, mode: self.auto_export_mode },
+                &config,
+            ).unwrap());
+
+        let Ok(mut session) = TuiSession::new(&config, &self.port, auto_export_session) else {
             return;
         };
         session.main_loop(tx_port);

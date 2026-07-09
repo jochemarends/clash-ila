@@ -1,4 +1,5 @@
 use std::io::{Result as IoResult, Seek};
+use std::path::PathBuf;
 
 use clap::ValueEnum;
 
@@ -11,10 +12,12 @@ use crate::vcd::{VcdWriter, VcdWriterConfig};
 pub enum AutoExportMode {
     /// Before writing each [`SignalCluster`], truncates the file, then writes the VCD header,
     /// variable definition section, and variable initialization section.
+    #[value(help = "Overwrite the file with the last captured samples")]
     Truncate,
     /// Writes the VCD header, variable definition section, and variable initialization section
     /// before writing the first [`SignalCluster`]. Subsequent [`SignalCluster`]s are appended to
     /// the data dump section.
+    #[value(help = "Append the last captured samples to the file")]
     Append,
 }
 
@@ -41,8 +44,8 @@ impl TryFrom<u32> for AutoExportMode {
 
 /// Configuration for an auto-export session.
 pub struct AutoExportConfig {
-    /// Name of the file to export to.
-    pub file_name: String,
+    /// Path of the file to export to.
+    pub path: PathBuf,
     /// Export mode to use.
     pub mode: AutoExportMode,
 }
@@ -67,13 +70,13 @@ impl AutoExportSession {
             .write(true)
             .create(true)
             .truncate(true)
-            .open(&config.file_name)?;
+            .open(&config.path)?;
 
         let writer = std::io::BufWriter::new(file);
 
         let mut vcd_config = VcdWriterConfig::with_module(ila.toplevel.clone());
         for signal in ila.inputs.iter() {
-            vcd_config.add_wire(signal.name.clone(), signal.width);
+            vcd_config = vcd_config.add_wire(signal.name.clone(), signal.width);
         }
         let vcd_writer = vcd_config.writer(writer);
 
