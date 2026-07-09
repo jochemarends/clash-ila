@@ -22,13 +22,13 @@ pub fn write_to_vcd<P: AsRef<Path>>(
 
     let writer = std::io::BufWriter::new(file);
 
-    let mut vcd_config = VcdWriterConfig::with_module(config.toplevel.clone());
+    let mut root = VcdModule::new(config.toplevel.clone());
 
     for signal in &signals.cluster {
-        vcd_config = vcd_config.add_wire(signal.name.to_string(), signal.width);
+        root = root.add_wire(signal.name.to_string(), signal.width);
     }
 
-    let mut vcd_writer = vcd_config.writer(writer);
+    let mut vcd_writer = root.writer(writer);
     vcd_writer.write_preamble()?;
     vcd_writer.write_cluster(&signals)?;
     vcd_writer.flush()
@@ -36,6 +36,45 @@ pub fn write_to_vcd<P: AsRef<Path>>(
 
 fn unknown_bits(width: usize) -> impl Iterator<Item = vcd::Value> {
     std::iter::repeat(vcd::Value::X).take(width)
+}
+
+#[derive(Debug, Clone)]
+enum VcdItem {
+    Wire { name: String, width: usize },
+    Module(VcdModule),
+}
+
+impl VcdItem {
+    /// Performs a pre-order depth-first fold over this item and its descendants.
+    fn fold<'a, B, F>(&'a self, init: B, f: &mut F) -> B
+    where
+        F: FnMut(B, &'a VcdItem) -> B,
+    {
+        let acc = f(init, &self);
+        if let VcdItem::Module(module) = self {
+            module.items.iter().fold(acc, |acc, item| item.fold(acc, f))
+        } else {
+            acc
+        }
+    }
+
+    /// Performs a pre-order depth-first fold over this item and its descendants as long as the fold
+    /// function does not return an error.
+    fn try_fold<'a, B, F, Error>(&'a self, init: B, f: &mut F) -> Result<B, Error>
+    where
+        F: FnMut(B, &'a VcdItem) -> Result<B, Error>,
+    {
+        f(init, &self).and_then(|acc| {
+            if let VcdItem::Module(module) = self {
+                module
+                    .items
+                    .iter()
+                    .try_fold(acc, |acc, item| item.try_fold(acc, f))
+            } else {
+                Ok(acc)
+            }
+        })
+    }
 }
 
 /// Configuration builder for [`VcdWriter`].
@@ -46,28 +85,29 @@ fn unknown_bits(width: usize) -> impl Iterator<Item = vcd::Value> {
 ///
 /// ```
 /// use std::fs::File;
-/// use crate::vcd::VcdWriterConfig;
+/// use crate::vcd::VcdModule;
 ///
 /// let file = File::create("dump.vcd").unwrap();
 ///
-/// let mut vcd_writer = VcdWriterConfig::with_module("mux".to_string())
+/// let mut vcd_writer = VcdModule::new("mux".to_string())
 ///     .add_wire("a".to_string(), 8)
 ///     .add_wire("b".to_string(), 8)
 ///     .add_wire("select".to_string(), 1)
 ///     .add_wire("output".to_string(), 8)
 ///     .writer(file);
 /// ```
-pub struct VcdWriterConfig {
-    vars: Vec<vcd::Var>,
-    module: String,
+#[derive(Debug, Clone)]
+pub struct VcdModule {
+    name: String,
+    items: Vec<VcdItem>,
 }
 
-impl VcdWriterConfig {
-    /// Constructs a new [`VcdWriterConfig`] with the specified module.
-    pub fn with_module(module: String) -> Self {
+impl VcdModule {
+    /// Constructs a new [`VcdModule`] with the specified name.
+    pub fn new(name: String) -> Self {
         Self {
-            vars: Vec::new(),
-            module: module,
+            name: name,
+            items: Vec::new(),
         }
     }
 
@@ -75,39 +115,55 @@ impl VcdWriterConfig {
     ///
     /// The wire will be added to the module associated with this configuration.
     pub fn add_wire(mut self, name: String, width: usize) -> Self {
-        let var_id = self.next_var_id();
-        let var = vcd::Var::new(vcd::VarType::Wire, width as u32, var_id, name, None);
-        self.vars.push(var);
+        self.items.push(VcdItem::Wire { name, width });
         self
     }
 
-    /// Constructs a new [`VcdWriter`] with this configuration.
+    /// Adds a submodule.
+    #[allow(unused)]
+    pub fn add_module(mut self, module: VcdModule) -> Self {
+        self.items.push(VcdItem::Module(module));
+        self
+    }
+
+    /// Constructs a new [`VcdWriter`] for this module.
     pub fn writer<W: IoWrite>(self, writer: W) -> VcdWriter<W> {
         VcdWriter::new(writer, self)
     }
 
-    fn next_var_id(&self) -> IdCode {
-        if let Some(wire) = self.vars.last() {
-            wire.code.next()
-        } else {
-            IdCode::FIRST
-        }
+    /// Performs a pre-order depth-first fold over the items in this VCD module.
+    fn fold<'a, B, F>(&'a self, init: B, f: &mut F) -> B
+    where
+        F: FnMut(B, &'a VcdItem) -> B,
+    {
+        self.items.iter().fold(init, |acc, item| item.fold(acc, f))
+    }
+
+    /// Performs a pre-order depth-first fold over the items in this VCD module as long as the fold
+    /// function does not return an error.
+    fn try_fold<'a, B, F, Error>(&'a self, init: B, f: &mut F) -> Result<B, Error>
+    where
+        F: FnMut(B, &'a VcdItem) -> Result<B, Error>,
+    {
+        self.items
+            .iter()
+            .try_fold(init, |acc, item| item.try_fold(acc, f))
     }
 }
 
 /// Wraps a [`std::io::Write`] for incrementally writing [`SignalCluster`]s as VCD.
 pub struct VcdWriter<W: IoWrite> {
     inner: vcd::Writer<W>,
-    config: VcdWriterConfig,
+    root: VcdModule,
     time: u64,
 }
 
 impl<W: IoWrite> VcdWriter<W> {
     /// Construct a new VCD writer with the given writer and configuration.
-    fn new(writer: W, config: VcdWriterConfig) -> Self {
+    fn new(writer: W, config: VcdModule) -> Self {
         Self {
             inner: vcd::Writer::new(writer),
-            config,
+            root: config,
             time: 0,
         }
     }
@@ -120,21 +176,50 @@ impl<W: IoWrite> VcdWriter<W> {
     pub fn write_preamble(&mut self) -> IoResult<()> {
         // Header
         self.inner.timescale(1, vcd::TimescaleUnit::US)?;
-        self.inner.add_module(&self.config.module)?;
-        for var in &self.config.vars {
-            self.inner.var(var)?;
-        }
-        self.inner.upscope()?;
+
+        Self::add_module(&mut self.inner, &self.root, IdCode::FIRST)?;
+
         self.inner.enddefinitions()?;
+
+        let _ = self.root.fold(0, &mut |acc, item| {
+            acc + matches!(item, VcdItem::Wire { .. }) as usize
+        });
 
         // Initialize all variables to unknown
         self.inner.begin(SimulationCommand::Dumpvars)?;
-        for wire in &self.config.vars {
-            self.inner.change_vector(wire.code, unknown_bits(wire.size as usize))?;
-        }
-        self.inner.end()?;
 
-        Ok(())
+        self.root
+            .try_fold(IdCode::FIRST, &mut |code, item| -> IoResult<IdCode> {
+                match item {
+                    VcdItem::Wire { width, .. } => {
+                        self.inner.change_vector(code, unknown_bits(*width))?;
+                        Ok(code.next())
+                    }
+                    _ => Ok(code),
+                }
+            })?;
+
+        self.inner.end()
+    }
+
+    fn add_module(
+        inner: &mut vcd::Writer<W>,
+        module: &VcdModule,
+        mut id: IdCode,
+    ) -> IoResult<IdCode> {
+        inner.add_module(&module.name)?;
+
+        for item in &module.items {
+            id = match item {
+                VcdItem::Wire { name, width } => inner
+                    .var_def(vcd::VarType::Wire, *width as u32, id, name, None)
+                    .map(|_| id.next()),
+                VcdItem::Module(module) => Self::add_module(inner, module, id),
+            }?;
+        }
+
+        inner.upscope()?;
+        Ok(id)
     }
 
     /// Writes a [`SignalCluster`] as VCD.
@@ -150,15 +235,19 @@ impl<W: IoWrite> VcdWriter<W> {
     ///
     /// Propagates errors from the underlying writer, or returns an error if the provided
     /// [`SignalCluster`] contains a different number of signals than the number of variables
-    /// specified in this writer's configuration.
+    /// specified in this writer's module (including submodules).
     pub fn write_cluster(&mut self, signals: &SignalCluster) -> IoResult<()> {
-        if signals.cluster.len() != self.config.vars.len() {
+        let wire_count = self.root.fold(0, &mut |acc, item| {
+            acc + matches!(item, VcdItem::Wire { .. }) as usize
+        });
+
+        if signals.cluster.len() != wire_count {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
                     "VCD write error in module '{}': expected {} signals, got {}",
-                    self.config.module,
-                    self.config.vars.len(),
+                    self.root.name,
+                    wire_count,
                     signals.cluster.len(),
                 ),
             ));
@@ -175,16 +264,26 @@ impl<W: IoWrite> VcdWriter<W> {
             let t = self.time + (index as u64);
             self.inner.timestamp(t)?;
 
-            for (wire, signal) in self.config.vars.iter().zip(&signals.cluster) {
-                if let Some(sample) = signal.samples.get(index) {
-                    let current_vector = sample.iter()
-                        .map(|b| b.then_some(vcd::Value::V1).unwrap_or(vcd::Value::V0));
+            let _ = self.root.try_fold(
+                (IdCode::FIRST, signals.cluster.iter()),
+                &mut |(id, mut signals), item| -> IoResult<_> {
+                    if let VcdItem::Wire { width, .. } = item {
+                        let signal = signals.next().unwrap();
 
-                    self.inner.change_vector(wire.code, current_vector)?;
-                } else {
-                    self.inner.change_vector(wire.code, unknown_bits(wire.size as usize))?;
-                }
-            }
+                        if let Some(sample) = signal.samples.get(index) {
+                            let current_vector = sample
+                                .iter()
+                                .map(|b| b.then_some(vcd::Value::V1).unwrap_or(vcd::Value::V0));
+
+                            self.inner.change_vector(id, current_vector)?;
+                        } else {
+                            self.inner.change_vector(id, unknown_bits(*width))?;
+                        }
+                    }
+
+                    Ok((id, signals))
+                },
+            )?;
         }
 
         self.time += max_sample_count as u64;
@@ -219,7 +318,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn write_empty_cluster() {
-        let mut writer = VcdWriterConfig::with_module("mux".to_string())
+        let mut writer = VcdModule::new("mux".to_string())
             .add_wire("a".to_string(), 8)
             .add_wire("b".to_string(), 8)
             .add_wire("select".to_string(), 1)
@@ -238,7 +337,7 @@ mod tests {
     // After writing a preamble, the VCD should contain a module with the correct name and
     // variables.
     fn write_preamble() {
-        let mut writer = VcdWriterConfig::with_module("toplevel".to_string())
+        let mut writer = VcdModule::new("toplevel".to_string())
             .add_wire("a".to_string(), 1)
             .add_wire("b".to_string(), 2)
             .add_wire("c".to_string(), 0)
@@ -278,7 +377,7 @@ mod tests {
     // fewer samples should get with undefined.
     #[test]
     fn pad_shorter_samples() {
-        let mut writer = VcdWriterConfig::with_module("toplevel".to_string())
+        let mut writer = VcdModule::new("toplevel".to_string())
             .add_wire("a".to_string(), 1)
             .add_wire("b".to_string(), 1)
             .writer(Vec::<u8>::new());

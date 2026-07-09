@@ -5,7 +5,7 @@ use clap::ValueEnum;
 
 use crate::communication::SignalCluster;
 use crate::config::IlaConfig;
-use crate::vcd::{VcdWriter, VcdWriterConfig};
+use crate::vcd::{VcdWriter, VcdModule};
 
 /// Controls how [`SignalCluster`]s are exported.
 #[derive(Debug, Copy, Clone, PartialEq, ValueEnum)]
@@ -74,11 +74,11 @@ impl AutoExportSession {
 
         let writer = std::io::BufWriter::new(file);
 
-        let mut vcd_config = VcdWriterConfig::with_module(ila.toplevel.clone());
+        let mut root = VcdModule::new(ila.toplevel.clone());
         for signal in ila.inputs.iter() {
-            vcd_config = vcd_config.add_wire(signal.name.clone(), signal.width);
+            root = root.add_wire(signal.name.clone(), signal.width);
         }
-        let vcd_writer = vcd_config.writer(writer);
+        let vcd_writer = root.writer(writer);
 
         Ok(Self {
             config,
