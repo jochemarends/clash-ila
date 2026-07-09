@@ -228,6 +228,7 @@ pub struct TuiArgs {
         long = "auto-export-mode",
         help = "The mode to be used when --auto-export is specified",
         default_value_t = AutoExportMode::Append,
+        value_enum,
     )]
     auto_export_mode: AutoExportMode,
 }

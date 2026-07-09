@@ -89,69 +89,72 @@ impl<'a> State<'a> {
             .areas(f.area());
 
             f.render_widget(help_msg, help_msg_area);
+            self.render_body(area, f);
+        });
+    }
 
-            let block = Block::bordered().title("Outputs");
-            f.render_widget(&block, area);
-            let area = block.inner(area);
+    fn render_body(&mut self, area: Rect, f: &mut Frame) {
+        let block = Block::bordered().title("Outputs");
+        f.render_widget(&block, area);
+        let area = block.inner(area);
 
-            let description = Paragraph::new("The page for driving output signals")
-                .wrap(Wrap { trim: true });
+        let description = Paragraph::new("The page for driving output signals")
+            .wrap(Wrap { trim: true });
 
-            let input_status = {
-                let is_valid = self.signals
-                    .iter()
-                    .map(|s| s.width)
-                    .zip(&self.input_states)
-                    .all(|(width, state)| {
-                        NumericState::immediate_parse(&state.input)
-                            .is_ok_and(|uint| uint < BigUint::from(2u32).pow(width as u32))
-                    });
+        let input_status = {
+            let is_valid = self.signals
+                .iter()
+                .map(|s| s.width)
+                .zip(&self.input_states)
+                .all(|(width, state)| {
+                    NumericState::immediate_parse(&state.input)
+                        .is_ok_and(|uint| uint < BigUint::from(2u32).pow(width as u32))
+                });
 
-                Paragraph::new(if is_valid {
-                    "Provided input is valid".green()
-                } else {
-                    "Provided input is INVALID".red()
-                }).wrap(Wrap { trim: true })
+            Paragraph::new(if is_valid {
+                "Provided input is valid".green()
+            } else {
+                "Provided input is INVALID".red()
+            }).wrap(Wrap { trim: true })
+        };
+
+        let [description_area, input_status_area, area] = Layout::vertical([
+            Constraint::Length(description.line_count(area.width) as u16),
+            Constraint::Length(input_status.line_count(area.width) as u16),
+            Constraint::Fill(1),
+        ])
+        .spacing(1)
+        .areas(area);
+
+        f.render_widget(description, description_area);
+
+        f.render_widget(input_status, input_status_area);
+
+        let layout = Layout::vertical(std::iter::repeat_n(Constraint::Length(3), self.signals.len()))
+            .split(area);
+
+        for (index, signal) in self.signals.iter().enumerate() {
+            let area = layout[index];
+            let prompt = &mut self.input_states[index];
+
+            let signal_label = {
+                let max_bound = BigInt::from(2).pow(signal.width as u32) - 1;
+                format!(" {} - input range [0 - {:#x}] ", signal.name, max_bound)
             };
 
-            let [description_area, input_status_area, area] = Layout::vertical([
-                Constraint::Length(description.line_count(area.width) as u16),
-                Constraint::Length(input_status.line_count(area.width) as u16),
-                Constraint::Fill(1),
-            ])
-            .spacing(1)
-            .areas(area);
+            let block = Block::bordered().title(signal_label);
+            f.render_widget(&block, area);
 
-            f.render_widget(description, description_area);
+            let inner_area = block.padding(Padding::left(1)).inner(area);
+            let is_selected = self.cursor_position == index;
+            prompt.render(inner_area, f, is_selected);
 
-            f.render_widget(input_status, input_status_area);
-
-            let layout = Layout::vertical(std::iter::repeat_n(Constraint::Length(3), self.signals.len()))
-                .split(area);
-
-            for (index, signal) in self.signals.iter().enumerate() {
-                let area = layout[index];
-                let prompt = &mut self.input_states[index];
-
-                let signal_label = {
-                    let max_bound = BigInt::from(2).pow(signal.width as u32) - 1;
-                    format!(" {} - input range [0 - {:#x}] ", signal.name, max_bound)
-                };
-
-                let block = Block::bordered().title(signal_label);
-                f.render_widget(&block, area);
-
-                let inner_area = block.padding(Padding::left(1)).inner(area);
-                let is_selected = self.cursor_position == index;
-                prompt.render(inner_area, f, is_selected);
-
-                if is_selected {
-                    let block = Block::new().borders(Borders::TOP | Borders::BOTTOM);
-                    let inner_area = block.inner(area);
-                    f.render_widget("> ", inner_area);
-                }
+            if is_selected {
+                let block = Block::new().borders(Borders::TOP | Borders::BOTTOM);
+                let inner_area = block.inner(area);
+                f.render_widget("> ", inner_area);
             }
-        });
+        }
     }
 
     /// Handles TUI events for driving output signals.

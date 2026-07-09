@@ -10,7 +10,7 @@ pub struct IlaSignal {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct IlaSignals(Vec<IlaSignal>);
+pub struct IlaSignals(pub Vec<IlaSignal>);
 
 impl IlaSignals {
     /// How many bits does it take to get one sample of all signals?

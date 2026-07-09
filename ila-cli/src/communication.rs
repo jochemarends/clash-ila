@@ -475,6 +475,7 @@ where
     T: IoRead + IoWrite,
 {
     let indices: Vec<u32> = range.collect();
+
     let words_per_index = ila.inputs.transaction_bit_count().div_ceil(32) as u32;
 
     let mut execute_reg = |output: &mut Vec<u32>, register: IlaRegisters| -> Option<()> {

@@ -429,7 +429,7 @@ impl<'a> TuiSession<'a> {
                 KeyResponse::Nothing
             }
             (TuiState::Main, KeyCode::Char('o'), _) => {
-                if self.config.inputs.len() == 0 {
+                if self.config.outputs.is_empty() {
                     self.log.push("Unable to drive output signals".to_owned());
                     self.log.push("The ILA has no output signals".to_owned());
                 } else {

@@ -281,7 +281,7 @@ impl<W: IoWrite> VcdWriter<W> {
                         }
                     }
 
-                    Ok((id, signals))
+                    Ok((id.next(), signals))
                 },
             )?;
         }
