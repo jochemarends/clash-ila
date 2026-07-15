@@ -221,6 +221,7 @@ pub struct TuiArgs {
 impl ParseSubcommand for TuiArgs {
     fn parse(self) {
         let mut tx_port = find_specified_port(&self.port, self.baud);
+
         let config = self
             .config
             .get_config()

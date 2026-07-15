@@ -21,7 +21,7 @@ use ratatui::{
 use crate::cli_registers::IlaRegisters;
 use crate::communication::{RegisterOutput, SignalCluster, perform_buffer_reads, perform_register_operation};
 use crate::config::IlaConfig;
-use crate::predicates::IlaPredicate;
+use crate::predicates::{IlaPredicate};
 use crate::predicates::PredicateTarget;
 use crate::predicates_tui::State as PredState;
 use crate::ui::textinput::TextPromptState;
@@ -38,6 +38,19 @@ const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
   a      ---   Toggle auto trigger re-arm
   v      ---   Write signals to VCD dump
 "#;
+
+/// Action to be performed by the TUI.
+#[derive(Debug, Clone)]
+pub enum TuiAction {
+    /// Configure the ILA's trigger point. This value should not exceed the ILA's buffer size.
+    SetTriggerPoint(u32),
+    /// Configure auto-rearm.
+    SetAutoRearm(bool),
+    /// Appends a message to the log section of the TUI.
+    Print(String),
+    /// Configure one of the ILA's predicates.
+    SetPredicate(IlaPredicate),
+}
 
 /// The reason to prompt the user with, mostly important to decide what to do next after a user has
 /// inputted data to the prompt
@@ -82,10 +95,10 @@ pub struct TuiSession<'a> {
     /// In what state is the TUI currently at?
     state: TuiState<'a>,
     /// The ILA configuration, specifying certain aspects of the ILA
-    config: &'a IlaConfig,
+    pub config: &'a IlaConfig,
     /// A log for interactions to log their activity too, regularly gets truncated to fit the
     /// screen during rendering
-    log: Vec<String>,
+    pub log: Vec<String>,
     /// A list of signal clusters captured by the ILA
     captured: Vec<SignalCluster>,
     /// Checks if the predicate is triggered or not
@@ -103,6 +116,8 @@ pub struct TuiSession<'a> {
     auto_reset: bool,
     /// The connected device path
     device_path: String,
+
+    actions: Vec<TuiAction>,
 }
 
 impl<'a> TuiSession<'a> {
@@ -116,7 +131,7 @@ impl<'a> TuiSession<'a> {
         execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
 
-        Ok(TuiSession {
+        let mut session = TuiSession {
             term: Terminal::new(backend)?,
             state: TuiState::Main,
             config,
@@ -128,7 +143,67 @@ impl<'a> TuiSession<'a> {
             last_trigger_check: Instant::now(),
             auto_reset: false,
             device_path: device_path.display().to_string(),
-        })
+            actions: Vec::new(),
+        };
+
+        let actions = match std::fs::read_to_string(".ila.lua") {
+            Ok(script) => {
+                let mut lua = crate::lua::LuaVm::new(config).unwrap();
+
+                match lua.exec(&script) {
+                    Ok(actions) => actions,
+                    Err(e) => {
+                        e.to_string().lines().for_each(|s| session.log.push(s.to_string()));
+                        vec![]
+                    },
+                }
+            },
+            _ => vec![],
+        };
+
+        session.actions = actions;
+
+        Ok(session)
+    }
+
+    fn perform_action<T: Read + Write>(&mut self, tx_port: &mut T, action: &TuiAction) -> KeyResponse {
+        match action {
+            TuiAction::SetTriggerPoint(n) => {
+                let (msg, response) = match perform_register_operation(
+                    tx_port,
+                    self.config,
+                    &IlaRegisters::TriggerPoint(*n),
+                ) {
+                    Ok(_) => (
+                        String::from("Trigger point change made"),
+                        KeyResponse::AppliedChanges,
+                    ),
+                    Err(err) => (format!("Error: {err}"), KeyResponse::Nothing),
+                };
+                self.log.push(msg);
+                response
+            },
+            TuiAction::SetAutoRearm(b) => {
+                self.auto_reset = *b;
+                KeyResponse::Nothing
+            },
+            TuiAction::Print(ref message) => {
+                self.log.push(message.clone());
+                KeyResponse::Nothing
+            },
+            TuiAction::SetPredicate(predicate) => {
+                match predicate.update_ila(tx_port, self.config) {
+                    Ok(_) => {
+                        self.log.push("Succesfully updated predicate state".into());
+                        KeyResponse::AppliedChanges
+                    },
+                    Err(err) => {
+                        self.log.push(format!("Failed to update ILA with error {err}"));
+                        KeyResponse::Nothing
+                    },
+                }
+            },
+        }
     }
 
     fn render_main(&mut self) {
@@ -281,8 +356,7 @@ impl<'a> TuiSession<'a> {
                 KeyResponse::Nothing
             }
             (TuiState::Main, KeyCode::Char('R'), _) => {
-                self.auto_sample = !self.auto_sample;
-                KeyResponse::Nothing
+                self.perform_action(tx_port, &TuiAction::SetAutoRearm(!self.auto_reset))
             }
             (TuiState::Main, KeyCode::Char(' '), _) => {
                 self.triggered = match perform_register_operation(
@@ -377,25 +451,8 @@ impl<'a> TuiSession<'a> {
                         KeyResponse::Nothing
                     }
                     PromptReason::ChangeTrigger => match prompt.input.parse() {
-                        Ok(n) if n > self.config.buffer_size as u32 => {
-                            self.log
-                                .push("Invalid input; must be specified range".to_string());
-                            KeyResponse::Nothing
-                        }
                         Ok(n) => {
-                            let (msg, response) = match perform_register_operation(
-                                tx_port,
-                                self.config,
-                                &IlaRegisters::TriggerPoint(n),
-                            ) {
-                                Ok(_) => (
-                                    String::from("Trigger point change made"),
-                                    KeyResponse::AppliedChanges,
-                                ),
-                                Err(err) => (format!("Error: {err}"), KeyResponse::Nothing),
-                            };
-                            self.log.push(msg);
-                            response
+                            self.perform_action(tx_port, &TuiAction::SetTriggerPoint(n))
                         }
                         Err(_) => {
                             self.log.push(
@@ -426,6 +483,10 @@ impl<'a> TuiSession<'a> {
     /// Handles everything from rendering to the input of the TUI interface
     pub fn main_loop<T: Read + Write>(&mut self, mut tx_port: T) {
         self.render();
+        let actions = std::mem::take(&mut self.actions);
+        for action in &actions {
+            self.perform_action(&mut tx_port, action);
+        }
 
         let mut last_should_sample = false;
         loop {

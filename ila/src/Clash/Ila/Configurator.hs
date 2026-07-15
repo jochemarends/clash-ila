@@ -78,7 +78,7 @@ simplePredicate :: forall dom a.
 simplePredicate f = pure f
 
 -- | Same as `Predicate dom a` but with a string to display in the CLI
-type NamedPredicate dom a = (Predicate dom a, String)
+type NamedPredicate dom a = (Predicate dom a, String, String)
 
 {- | Default ILA predicate for checking equality
 It applies the mask over the incoming sample and `==` it with the compare value
@@ -119,11 +119,11 @@ ilaPredicateFalse = simplePredicate ilaPredicateFalse'
 -- | Predefined list of three ILA predicates. The operators it covers are: `==`, `>`, `<`
 ilaDefaultPredicates :: forall dom a. (BitPack a) => Vec 5 (NamedPredicate dom a)
 ilaDefaultPredicates =
-  ( (ilaPredicateEq, "Equals")
-      :> (ilaPredicateGt, "Greater than")
-      :> (ilaPredicateLt, "Less than")
-      :> (ilaPredicateTrue, "Always true")
-      :> (ilaPredicateFalse, "Always false")
+  ( (ilaPredicateEq, "Equals", "eq")
+      :> (ilaPredicateGt, "Greater than", "gt")
+      :> (ilaPredicateLt, "Less than", "lt")
+      :> (ilaPredicateTrue, "Always true", "true")
+      :> (ilaPredicateFalse, "Always false", "false")
       :> Nil
   )
 
@@ -213,10 +213,10 @@ instance
       , triggerPoint = triggerPoint
       , hash = ilaHash
       , tracing = tracing
-      , predicates = fst <$> predicates
+      , predicates = (\(p, _, _) -> p) <$> predicates
       }
    where
-    ilaHash = writeSignalInfo toplevel bufferDepth (fromGenSignal <$> signalInfos) (snd <$> predicates)
+    ilaHash = writeSignalInfo toplevel bufferDepth (fromGenSignal <$> signalInfos) ((\(_, n, _) -> n) <$> predicates) ((\(_, _, id) -> id) <$> predicates)
 
 {- | General case
 For every pair of new set of `(Signal dom a, "name")`, bundle the signal and collect the name
@@ -283,9 +283,10 @@ writeSignalInfo ::
   -- | A `Vec` of signal widths and their label
   Vec n (Int, String) ->
   Vec m String ->
+  Vec m String ->
   -- | The hash of the JSON
   BitVector 32
-writeSignalInfo !_toplevel !_bufSize !_sigInfo !_triggerNames = 0
+writeSignalInfo !_toplevel !_bufSize !_sigInfo !_triggerNames !_triggerIds = 0
 {-# OPAQUE writeSignalInfo #-}
 {-# ANN writeSignalInfo hasBlackBox #-}
 {-# ANN
@@ -313,7 +314,7 @@ signalInfoBBF :: (HasCallStack) => BlackBoxFunction
 signalInfoBBF _ _ args _ = view tcCache >>= go
  where
   go tcm
-    | [toplevel, _, sigInfo, triggerNames] <- lefts args
+    | [toplevel, _, sigInfo, triggerNames, triggerIds] <- lefts args
     , [ (coreView tcm -> LitTy (NumTy n))
         , (coreView tcm -> LitTy (NumTy m))
         , (coreView tcm -> LitTy (NumTy s))
@@ -328,6 +329,7 @@ signalInfoBBF _ _ args _ = view tcCache >>= go
             (SNat @s)
             (getSigInfo sigInfo)
             (coerceTermToType triggerNames)
+            (coerceTermToType triggerIds)
     | otherwise =
         errorX
           "AST does not match expected, expected AST in the form of String -> SNat -> Vec n (Int, String)"
@@ -360,8 +362,9 @@ signalInfoBBF _ _ args _ = view tcCache >>= go
     SNat s ->
     Vec n (Int, String) ->
     Vec m (String) ->
+    Vec m (String) ->
     GenIla
-  getGenIla toplevel bufSize sigInfo triggerNames =
+  getGenIla toplevel bufSize sigInfo triggerNames triggerIds =
     GenIla
       { toplevel = coerceTermToType toplevel
       , bufferSize = snatToNum bufSize
@@ -375,6 +378,7 @@ signalInfoBBF _ _ args _ = view tcCache >>= go
       , -- The reverse is needed as the polyvariadic function builds up the vector in reverse order
         signals = P.reverse $ toList $ toGenSignal <$> sigInfo
       , triggerNames = toList triggerNames
+      , triggerIds = toList triggerIds
       }
 
   -- \| Meta information about the blackbox
@@ -459,5 +463,6 @@ data GenIla = GenIla
   , hash :: Word32
   , signals :: [GenSignal]
   , triggerNames :: [String]
+  , triggerIds :: [String]
   }
   deriving (Generic, Show, ToJSON, Eq, Hashable)

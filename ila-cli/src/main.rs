@@ -13,6 +13,7 @@ mod wishbone;
 mod cli;
 mod cli_registers;
 mod export;
+mod lua;
 
 #[derive(Parser, Debug)]
 #[command(version, about)]

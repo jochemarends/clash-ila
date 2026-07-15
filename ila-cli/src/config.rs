@@ -10,6 +10,14 @@ pub struct IlaSignal {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct IlaTrigger {
+    /// Name of the trigger which is displayed in the TUI.
+    pub name: String,
+    /// Unique identifier of trigger used in Lua config.
+    pub id: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct IlaConfig {
     pub toplevel: String,
     #[serde(rename = "bufferSize")]
@@ -18,6 +26,8 @@ pub struct IlaConfig {
     pub signals: Vec<IlaSignal>,
     #[serde(rename = "triggerNames")]
     pub trigger_names: Vec<String>,
+    #[serde(rename = "triggerIds")]
+    pub trigger_ids: Vec<String>,
 }
 
 impl IlaConfig {

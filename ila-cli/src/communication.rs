@@ -26,6 +26,19 @@ pub fn bv_to_bytes(v: &BitVec<u8, Msb0>) -> Vec<u8> {
     vec
 }
 
+/// Converts a [`BigUint`] into a sample in the format used by the ILA.
+pub fn biguint_to_sample(n: &BigUint, width: usize) -> BitVec<u8, Msb0> {
+    let reference: BitVec<u8, Msb0> = BitVec::from_vec(n.to_bytes_be());
+    let mut base: BitVec<u8, Msb0> = BitVec::with_capacity(width);
+    for index in (0..width).rev() {
+        base.push(match reference.len().checked_sub(index + 1) {
+            Some(index) => reference[index],
+            None => false,
+        });
+    }
+    base
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ReadWrite<R, W> {
     Read(R),

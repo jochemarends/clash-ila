@@ -4,7 +4,7 @@ use std::{
 };
 
 use crate::{
-    communication::{Signal, SignalCluster, bv_to_bytes},
+    communication::{Signal, SignalCluster, biguint_to_sample, bv_to_bytes},
     config::{IlaConfig, IlaSignal},
     predicates::{IlaPredicate, PredicateOperation, PredicateTarget},
     ui::textinput::TextPromptState,
@@ -534,19 +534,10 @@ impl State<'_> {
                 ..
             }) => {
                 fn biguint_to_signal((n, signal): (BigUint, &IlaSignal)) -> Signal {
-                    let reference: BitVec<u8, Msb0> = BitVec::from_vec(n.to_bytes_be());
-                    let mut base: BitVec<u8, Msb0> = BitVec::with_capacity(signal.width);
-                    for index in (0..signal.width).rev() {
-                        base.push(match reference.len().checked_sub(index + 1) {
-                            Some(index) => reference[index],
-                            None => false,
-                        });
-                    }
-
                     Signal {
                         name: signal.name.clone(),
                         width: signal.width,
-                        samples: vec![base],
+                        samples: vec![biguint_to_sample(&n, signal.width)],
                     }
                 }
 
