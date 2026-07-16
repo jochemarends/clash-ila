@@ -372,20 +372,20 @@ This circuit can be used to instantiate and configure an ILA using a wishbone in
 ILA behaviour is done by writing to specific addresses and selecting the right bytes using busSelect.
 -}
 ilaWb ::
-  forall dom (out :: OutSigList).
+  forall dom (out :: Ports).
   (HiddenClockResetEnable dom) =>
   -- | Initial ILA configuration
   IlaConfig dom out ->
   -- | The ILA wishbone interface
   Circuit
     (Wishbone dom Standard 32 4)
-    (CSignal dom (OutSigTuple out))
+    (CSignal dom (PortsTuple out))
 ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing predicates) = Circuit exposeIn
  where
   exposeIn (fwdM2S, _) = out
    where
     -- \| The initial contents of the memory map
-    initRM :: IlaRM (BitSize a) (BitSize (OutSigTuple outputs)) depth m
+    initRM :: IlaRM (BitSize a) (BitSize (PortsTuple outputs)) depth m
     initRM =
       IlaRM
         { capture = False
@@ -415,9 +415,9 @@ ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing
       -- \| The amount of samples currently being stored in the buffer
       Index (depth + 1) ->
       -- \| The current register map
-      IlaRM (BitSize a) (BitSize (OutSigTuple out)) depth m ->
+      IlaRM (BitSize a) (BitSize (PortsTuple out)) depth m ->
       -- \| The updated register map
-      IlaRM (BitSize a) (BitSize (OutSigTuple out)) depth m
+      IlaRM (BitSize a) (BitSize (PortsTuple out)) depth m
     updateRM triggered capture buffLength rm =
       rm
         { triggered = rm.triggered || triggered
@@ -428,7 +428,7 @@ ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing
         }
 
     -- \| Selects the right predicate and applies it on incoming sample
-    doesTrigger :: IlaRM (BitSize a) (BitSize (OutSigTuple out)) depth m -> a -> Vec m (RawPredicate a) -> Bool
+    doesTrigger :: IlaRM (BitSize a) (BitSize (PortsTuple out)) depth m -> a -> Vec m (RawPredicate a) -> Bool
     doesTrigger rm currentSample predicates' =
       rm.capture -- If capture is disabled, don't bother with testing predicates
         && ( predicateOperation rm.triggerOperation $
@@ -439,7 +439,7 @@ ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing
            )
 
     -- \| Selects the right predicate and applies it on incoming sample
-    captureActive :: IlaRM (BitSize a) (BitSize (OutSigTuple out)) depth m -> a -> Vec m (RawPredicate a) -> Bool
+    captureActive :: IlaRM (BitSize a) (BitSize (PortsTuple out)) depth m -> a -> Vec m (RawPredicate a) -> Bool
     captureActive rm currentSample predicates' =
       predicateOperation rm.captureOperation $
         zipWith
@@ -502,7 +502,7 @@ ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing
       -- \| The current WB packet
       WishboneM2S 32 4 ->
       -- \| The ila register map
-      IlaRM (BitSize a) (BitSize (OutSigTuple out)) depth m ->
+      IlaRM (BitSize a) (BitSize (PortsTuple out)) depth m ->
       -- \| The value the buffer is currently pointing at
       BitVector 32 ->
       -- \| The value the component should respond with
@@ -558,7 +558,7 @@ device. If run configuration of the ILA on the FPGA is desired, please look at `
 an ILA with an Wishbone interface instead.
 -}
 ila ::
-  forall dom (out :: OutSigList).
+  forall dom (out :: Ports).
   (HiddenClockResetEnable dom) =>
   -- | The initial configuration of the ILA
   IlaConfig dom out ->
@@ -566,7 +566,7 @@ ila ::
   -- outgoing stream are etherbone response packets.
   Circuit
     (PacketStream dom 4 ())
-    (PacketStream dom 4 (), CSignal dom (OutSigTuple out))
+    (PacketStream dom 4 (), CSignal dom (PortsTuple out))
 ila config = circuit $ \incoming -> do
   (outgoing, wbMaster) <- etherboneC 0 (pure Nil) -< incoming
 
@@ -578,7 +578,7 @@ ila config = circuit $ \incoming -> do
 connection to the host PC is an UART connection.
 -}
 ilaUart ::
-  forall dom baud (out :: OutSigList).
+  forall dom baud (out :: Ports).
   ( HiddenClockResetEnable dom
   , ValidBaud dom baud
   ) =>
@@ -589,7 +589,7 @@ ilaUart ::
   -- to the toplevel UART RX and TX pins.
   Circuit
     (CSignal dom Bit)
-    (CSignal dom Bit, CSignal dom (OutSigTuple out))
+    (CSignal dom Bit, CSignal dom (PortsTuple out))
 ilaUart baud config = circuit $ \rxBit -> do
   (rxByte, txBit) <- uartDf baud -< (txByte, rxBit)
 
