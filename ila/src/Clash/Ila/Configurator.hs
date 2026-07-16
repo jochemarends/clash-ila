@@ -146,6 +146,7 @@ data IlaConfig dom (out :: Ports) where
     , BitPack a
     , 1 <= BitSize a `DivRU` 32
     , 1 <= BitSize a
+    , 1 <= (BitSize a + BitSize (PortsTuple out)) `DivRU` 32
     , 1 <= n
     , 1 <= m
     , m <= 64
@@ -175,6 +176,7 @@ data WithIlaConfig dom a (out :: Ports) where
     , BitPack a
     , 1 <= BitSize a `DivRU` 32
     , 1 <= BitSize a
+    , 1 <= (BitSize a + BitSize (PortsTuple out)) `DivRU` 32
     , 1 <= n
     , 1 <= m
     , m <= 64
@@ -209,6 +211,7 @@ instance
   , dom0 ~ dom1
   , BitPack a
   , 1 <= BitSize a `DivRU` 32
+  , 1 <= (BitSize a + BitSize (PortsTuple out0)) `DivRU` 32
   , a ~ b
   , KnownPorts out0
   , out0 ~ out1
@@ -251,7 +254,7 @@ instance
     (Signal dom b, String) ->
     next
   ilaProbe (prevInfos, prevSignal) (newSignal, newName) =
-    ilaProbe (prevInfos ++ (newInfo :> Nil), newBundled)
+    ilaProbe (prevInfos :< newInfo, newBundled)
    where
     newInfo = GenSignal{name = newName, width = natToNum @(BitSize b)}
     newBundled = (,) <$> prevSignal <*> newSignal

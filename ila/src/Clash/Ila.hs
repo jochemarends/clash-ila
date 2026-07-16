@@ -245,7 +245,7 @@ data IlaRM bitSizeA bitSizeOut depth n = IlaRM
   -- ^ The mask given to the capture predicate
   , captureCompare :: BitVector bitSizeA
   -- ^ The compare value given to the capture predicate
-  , wordIndex :: Index (bitSizeA `DivRU` 32)
+  , wordIndex :: Index ((bitSizeA + bitSizeOut) `DivRU` 32)
   -- ^ What buffer to read
   , outputBuffer :: DoubleBuffer (BitVector bitSizeOut)
   -- ^ Double buffer for the output signals
@@ -326,7 +326,7 @@ writeIlaMM ::
   , 1 <= depth
   , 1 <= n
   , 1 <= bitSizeA `DivRU` 32
-  , 1 <= bitSizeA
+  , 1 <= (bitSizeA + bitSizeOut) `DivRU` 32
   ) =>
   -- | The wishbone address
   BitVector 32 ->
@@ -479,7 +479,7 @@ ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing
     -- samples
     --
     -- To combat this, we simply delay the signal we sample by one cycle!
-    delayedTrace = register (unpack 0) tracing
+    delayedTrace = register (unpack 0) (bundle (tracing, ilaRM.outputBuffer.front))
 
     -- \| The output from the ILA's internal buffer
     (bufferOutput, bufferLength) =
@@ -546,8 +546,10 @@ ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing
     -- Writes are done in one clock cycle, but wishbone timing requires us to delay it by one clock cycle
     out =
       ( register emptyWishboneS2M $ liftA2 reply delayedAck readManager
-      , (unpack . v2bv . reverse . bv2v . unpack) <$> ilaRM.outputBuffer.front
+      , outSigs
       )
+
+    outSigs =  (unpack . v2bv . reverse . bv2v . unpack) <$> ilaRM.outputBuffer.front
 
 {- | The ILA component itself
 

@@ -319,7 +319,8 @@ impl IlaRegisters {
             },
 
             IlaRegisters::InputBuffer(_) => {
-                RegisterOutput::BufferContent(SignalCluster::from_data(&ila.inputs, output))
+                let signals = IlaSignals(ila.outputs.iter().chain(ila.inputs.iter()).cloned().collect::<Vec<_>>());
+                RegisterOutput::BufferContent(SignalCluster::from_data(&signals, output))
             }
             IlaRegisters::InputWordIndex(_) => RegisterOutput::None,
         }
@@ -476,7 +477,8 @@ where
 {
     let indices: Vec<u32> = range.collect();
 
-    let words_per_index = ila.inputs.transaction_bit_count().div_ceil(32) as u32;
+    let total_bit_count = ila.inputs.transaction_bit_count() + ila.outputs.transaction_bit_count();
+    let words_per_index = total_bit_count.div_ceil(32) as u32;
 
     let mut execute_reg = |output: &mut Vec<u32>, register: IlaRegisters| -> Option<()> {
         for record in register.to_wb_transaction(ila).to_records() {
