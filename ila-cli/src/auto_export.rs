@@ -103,6 +103,7 @@ impl AutoExportSession {
             let file = self.writer.writer_mut().get_mut();
             file.set_len(0)?;
             file.rewind()?;
+            self.writer.reset_timestamp();
         }
 
         if should_write_preamble {

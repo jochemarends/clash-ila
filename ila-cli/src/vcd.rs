@@ -305,6 +305,11 @@ impl<W: IoWrite> VcdWriter<W> {
     pub fn writer_mut(&mut self) -> &mut W {
         self.inner.writer()
     }
+
+    /// Reset the timestamp.
+    pub fn reset_timestamp(&mut self) {
+        self.time = 0;
+    }
 }
 
 #[cfg(test)]
