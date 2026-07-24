@@ -242,7 +242,7 @@ instance
     newInfo = GenSignal{name = newName, width = natToNum @(BitSize b)}
     newBundled = (,) <$> prevSignal <*> newSignal
 
-{- | A polyvariadic function containing 'labelled signals', aka, a list of tuples where the left
+{- | A polyvariadic function containing 'labeled signals', aka, a list of tuples where the left
 side is an arbitrary signal, and the right a string.
 
 # Example:
@@ -252,7 +252,7 @@ side is an arbitrary signal, and the right a string.
 >>> probe = ilaProbe (counter, "8 bit value") (active, "system active")
 >>> :t probe
 >>> probe
-  :: (LabelledSignals t 2 "System" (Unsigned 8, Bool),
+  :: (LabeledSignals t 2 "System" (Unsigned 8, Bool),
       Hidden "clock" (Clock System), Hidden "reset" (Reset System),
       Hidden "enable" (Enable System)) =>
       t

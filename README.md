@@ -87,10 +87,10 @@ You can also run the ILA-CLI with Nix, by typing `nix run github:qbaylogic/clash
 ### ILA Clash component
 
 Once the ILA is added as a dependency in your Clash project, you will need to add two modules to
-your ILA design: `Ila` and `ConfigGen`. The `Ila` module exposes several different ILA circuits,
-from 'all-in-one' packages (`ilaUart` for a UART connected ILA for example) to the individual circuits
-to fine-tune control. The `ConfigGen` module provides the `ilaConfig` function, which is crucial to
-instantiate the ILA.
+your ILA design: `Ila` and `Ila.Configuration`. The `Ila` module exposes several different ILA
+circuits, from 'all-in-one' packages (`ilaUart` for a UART connected ILA for example) to the
+individual circuits to fine-tune control. The `Ila.Configuration` module provides the `ilaConfig`
+function, which is crucial to instantiate the ILA.
 
 #### Configuration
 
@@ -115,7 +115,7 @@ ilaConfig
       -- ^ The name of the system to display in the VCD
       , triggerPoint = 0
       -- ^ How many samples to store *after* the ILA has triggered
-      , triggers = ilaDefaultPredicates
+      , predicates = ilaDefaultPredicates
       -- ^ The predicates that the ILA are capable of triggering
       }
 ```
@@ -199,7 +199,7 @@ ilaTopLevel baud rx = go
         { bufferDepth=d10
         , name="DemoILA"
         , triggerPoint=0
-        , triggers=ilaDefaultPredicates
+        , predicates=ilaDefaultPredicates
         }
 
   -- | Connect the TX and RX pins to the toplevel
