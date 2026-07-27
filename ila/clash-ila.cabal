@@ -57,7 +57,9 @@ common common-options
     constraints,
     ghc-typelits-natnormalise,
     ghc-typelits-extra,
-    ghc-typelits-knownnat
+    ghc-typelits-knownnat,
+    clash-shockwaves,
+    containers
 
 executable clash
   main-is: clash/Main.hs
@@ -65,6 +67,16 @@ executable clash
     base,
     clash-ghc,
     clash-ila,
+    examples
+
+executable gen-shockwaves-meta
+  import: common-options
+  main-is: shockwaves/Main.hs
+  build-depends:
+    base,
+    clash-ila,
+    clash-shockwaves,
+    text,
     examples
 
 library
@@ -76,6 +88,7 @@ library
   other-modules:
     Clash.Ila.Internal.Communication
     Clash.Ila.Internal.RingBuffer
+    Clash.Ila.Internal.Shockwaves
 
 test-suite unittests
   import: common-options
@@ -97,7 +110,9 @@ library examples
   hs-source-dirs:
     examples
   build-depends:
-    clash-ila
+    clash-ila,
+    clash-shockwaves,
+    text
   exposed-modules:
     ClashIlaDemo
     Domain
