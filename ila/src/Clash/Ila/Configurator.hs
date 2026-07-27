@@ -32,9 +32,11 @@ module Clash.Ila.Configurator (
   -- | Clash refuses to compile if these blackbox functions are not in scope
   writeSignalInfo,
   signalInfoBBF,
+
+  genShockwavesMetadata,
 ) where
 
-import Clash.Prelude hiding (Exp, Type)
+import Clash.Prelude hiding (Exp, Type, traceSignal, dumpVCD)
 import Prelude qualified as P
 
 import Clash.Annotations.Primitive
@@ -52,14 +54,20 @@ import Data.String.Interpolate (__i)
 import GHC.Stack (HasCallStack)
 import Prettyprinter (Doc, pretty)
 
-import Data.Aeson (ToJSON)
+import Data.Aeson (ToJSON (..))
+import Data.Aeson qualified
 import Data.Aeson.Text (encodeToLazyText)
-import Data.Data (Proxy (Proxy))
 import Data.Either
 import Data.Hashable (Hashable, hash)
 import Data.Monoid (Ap (getAp))
 import Data.Word (Word32)
 import Data.Kind
+
+import Clash.Ila.Internal.Shockwaves (Metadata (..), metadataRef, updateMetadata)
+import Clash.Shockwaves qualified as Shockwaves
+import Data.IORef
+import GHC.IO
+import Data.Data (Proxy(..))
 
 {- | ILA predicate function
 Used to compare incoming data to a reference value (with a possible mask) and returns if the
@@ -215,6 +223,7 @@ instance
   , a ~ b
   , KnownPorts out0
   , out0 ~ out1
+  , KnownSymbol dom0
   ) =>
   LabeledSignals
     ((Vec n GenSignal, Signal dom0 a) -> WithIlaConfig dom1 b out1 -> IlaConfig dom0 out0)
@@ -224,16 +233,18 @@ instance
     WithIlaConfig dom1 a out ->
     IlaConfig dom0 out
   ilaProbe (signalInfos, tracing) (WithIlaConfig @_ @_ @_ @_ @_ toplevel triggerPoint bufferDepth predicates _outputs) =
-    IlaConfig
-      { depth = bufferDepth
-      , triggerPoint = triggerPoint
-      , hash = ilaHash
-      , tracing = tracing
-      , predicates = fst <$> predicates
-      }
+    alterShockwavesMetadata `seq` config
    where
+    config =
+      IlaConfig
+        { depth = bufferDepth
+        , triggerPoint = triggerPoint
+        , hash = ilaHash
+        , tracing = tracing
+        , predicates = fst <$> predicates
+        }
     ilaHash = writeSignalInfo toplevel bufferDepth (fromGenSignal <$> signalInfos) (fromGenSignal <$> toGenSignals @out0) (snd <$> predicates)
-
+    alterShockwavesMetadata = unsafePerformIO $ modifyIORef metadataRef (\m -> m { scope = Just toplevel })
 
 {- | General case
 For every pair of new set of `(Signal dom a, "name")`, bundle the signal and collect the name
@@ -244,6 +255,7 @@ instance
   ( m ~ n + 1
   , NFDataX b
   , BitPack b
+  , Shockwaves.Waveform b
   , 1 <= BitSize b `DivRU` 32
   , LabeledSignals ((Vec m GenSignal, Signal dom (a, b)) -> next)
   ) =>
@@ -254,10 +266,15 @@ instance
     (Signal dom b, String) ->
     next
   ilaProbe (prevInfos, prevSignal) (newSignal, newName) =
-    ilaProbe (prevInfos :< newInfo, newBundled)
+    alterShockwavesMetadata `seq` (ilaProbe ((prevInfos :< newInfo), newBundled))
    where
     newInfo = GenSignal{name = newName, width = natToNum @(BitSize b)}
     newBundled = (,) <$> prevSignal <*> newSignal
+    alterShockwavesMetadata =
+      if clashSimulation
+        then
+          unsafePerformIO $ updateMetadata @b newName
+        else ()
 
 {- | A polyvariadic function containing 'labelled signals', aka, a list of tuples where the left
 side is an arbitary signal, and the right a string.
@@ -280,6 +297,7 @@ ilaConfig ::
   , BitPack a
   , 1 <= BitSize a `DivRU` 32
   , LabeledSignals ((Vec 1 GenSignal, Signal dom ((), a)) -> next)
+  , Shockwaves.Waveform a
   ) =>
   (Signal dom a, String) ->
   next
@@ -534,3 +552,13 @@ instance
   toGenSignals = genSignal :> toGenSignals @xs
    where
     genSignal = GenSignal{name = symbolVal (Proxy @name), width = natToNum @(BitSize a)}
+
+-- | Generate a metadata file for Clash Shockwaves for the ILA's signals.
+--
+-- The passed signal should depend on the ILA-core, which gets sampled to ensure
+-- the metadata gets populated.
+genShockwavesMetadata :: forall dom a. (KnownDomain dom, NFDataX a) => FilePath -> Signal dom a -> IO ()
+genShockwavesMetadata path s = do
+  _ <- mapM_ (evaluate . rnfX) (sampleN 100 s)
+  metadata <- readIORef metadataRef
+  Data.Aeson.encodeFile path metadata
