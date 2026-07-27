@@ -398,7 +398,7 @@ signalInfoBBF _ _ args _ = view tcCache >>= go
       , -- The reverse is needed as the polyvariadic function builds up the vector in reverse order
         inputs = P.reverse $ toList $ toGenSignal <$> sigInfo
       , triggerNames = toList triggerNames
-      , outputs = toList $ toGenSignal <$> outputs
+      , outputs = P.reverse $ toList $ toGenSignal <$> outputs
       }
 
   -- \| Meta information about the blackbox

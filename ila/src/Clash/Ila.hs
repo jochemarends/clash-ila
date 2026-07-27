@@ -546,10 +546,8 @@ ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing
     -- Writes are done in one clock cycle, but wishbone timing requires us to delay it by one clock cycle
     out =
       ( register emptyWishboneS2M $ liftA2 reply delayedAck readManager
-      , outSigs
+      , unpack <$> ilaRM.outputBuffer.front
       )
-
-    outSigs =  (unpack . v2bv . reverse . bv2v . unpack) <$> ilaRM.outputBuffer.front
 
 {- | The ILA component itself
 

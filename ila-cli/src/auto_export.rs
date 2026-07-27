@@ -75,7 +75,7 @@ impl AutoExportSession {
         let writer = std::io::BufWriter::new(file);
 
         let mut root = VcdModule::new(ila.toplevel.clone());
-        for signal in ila.inputs.iter() {
+        for signal in ila.outputs.iter().chain(ila.inputs.iter()) {
             root = root.add_wire(signal.name.clone(), signal.width);
         }
         let vcd_writer = root.writer(writer);

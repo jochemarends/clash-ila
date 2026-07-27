@@ -319,6 +319,15 @@ impl IlaRegisters {
             },
 
             IlaRegisters::InputBuffer(_) => {
+                // The ILA configuration file stores the signals in reverse order. Given inputs
+                // [a, b] and outputs [c, d] they are stored as [b, a] and [d, c], respectively.
+                // Because of this, `from_data` deserializes signals in reverse, so we prepend the
+                // outputs to get [d, c, b, a] which becomes [a, b, c, d] when reversed by
+                // `from_data`.
+                //
+                // I think it's better to not reverse the order of signals in the configuration file
+                // and `from_data`, but because many aspects of the ILA assume this format, this may
+                // break things.
                 let signals = IlaSignals(ila.outputs.iter().chain(ila.inputs.iter()).cloned().collect::<Vec<_>>());
                 RegisterOutput::BufferContent(SignalCluster::from_data(&signals, output))
             }
