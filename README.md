@@ -3,8 +3,8 @@
 
 ## What is this?
 
-The Clash-ILA is a integrated Logic Analyzer (ILA) written in pure clash. The primary goal of this
-project is to make ILAs accessable to any (Clash) FPGA project by developing an platform independent
+The Clash-ILA is an integrated Logic Analyzer (ILA) written in pure clash. The primary goal of this
+project is to make ILAs accessible to any (Clash) FPGA project by developing a platform independent
 ILA in Clash.
 
 ## Installation
@@ -30,7 +30,7 @@ source-repository-package
 
 Then include the `clash-ila` package in your dependencies in `<yourproject>.cabal`.
 
-On the next compilation of your Clash project, it should fetch the project from Github and make it
+On the next compilation of your Clash project, it should fetch the project from GitHub and make it
 available to use in your project.
 
 ### Nix
@@ -87,20 +87,20 @@ You can also run the ILA-CLI with Nix, by typing `nix run github:qbaylogic/clash
 ### ILA Clash component
 
 Once the ILA is added as a dependency in your Clash project, you will need to add two modules to
-your ILA design: `Ila` and `ConfigGen`. The `Ila` module exposes several different ILA circuits,
-from 'all-in-one' packages (`ilaUart` for an UART connected ILA for example) to the individual circuits
-to fine-tune control. The `ConfigGen` module provides the `ilaConfig` function, which is crucial to
-instantiate the ILA.
+your ILA design: `Ila` and `Ila.Configuration`. The `Ila` module exposes several different ILA
+circuits, from 'all-in-one' packages (`ilaUart` for a UART connected ILA for example) to the
+individual circuits to fine-tune control. The `Ila.Configuration` module provides the `ilaConfig`
+function, which is crucial to instantiate the ILA.
 
 #### Configuration
 
-The `ilaConfig` function takes in several signals and an `WithIlaConfig`-record type to configure the
+The `ilaConfig` function takes in several signals and a `WithIlaConfig`-record type to configure the
 ILA and write this data to a file during synthesis. This file is referred to as the "ila configuration
 file" and contains crucial information for the CLI to know about, such as the bit widths of each signal.
 The `ilaConfig` function will return an `IlaConfig`-record, which is used by ILA circuit to know
 which signals to monitor.
 
-An example of how to build up an configuration using `ilaConfig`:
+An example of how to build up a configuration using `ilaConfig`:
 
 ```hs
 ilaConfig
@@ -115,10 +115,8 @@ ilaConfig
       -- ^ The name of the system to display in the VCD
       , triggerPoint = 0
       -- ^ How many samples to store *after* the ILA has triggered
-      , triggers = ilaDefaultPredicates
+      , predicates = ilaDefaultPredicates
       -- ^ The predicates that the ILA are capable of triggering
-      , capture = pure True
-      -- ^ Enables the capturing of signals, when `capture` is false the ILA is inactive
       }
 ```
 
@@ -201,8 +199,7 @@ ilaTopLevel baud rx = go
         { bufferDepth=d10
         , name="DemoILA"
         , triggerPoint=0
-        , triggers=ilaDefaultPredicates
-        , capture=pure True
+        , predicates=ilaDefaultPredicates
         }
 
   -- | Connect the TX and RX pins to the toplevel
@@ -241,10 +238,19 @@ ILA. These are triggered using the keybinds. These keybinds are:
 
 - space  => Retrieves the samples from the ILA, only works when the ILA is in a triggered state
 
-- r      => Re-arm the trigger, resets/re-arms the trigger and clears the buffer.
-
 - t      => Change the trigger point, sets the amount of samples for the ILA to capture *after*
 having been triggered.
+
+- p      => Change the trigger predicates. Controls when the ILA enters a triggered state.
+
+- c      => Change the capture predicates. When the ILA is not in a triggered state, or when there
+are still samples to capture as determined by the trigger point, the capture predicates determine
+for each clock cycle whether the samples are added to the buffer.
+
+- R      => Toggle the automatic reading of samples. When enabled, samples are automatically read
+when the ILA is in a triggered state.
+
+- r      => Re-arm the trigger, resets/re-arms the trigger and clears the buffer.
 
 - v      => Write the samples captured by the ILA to a VCD file. 
 
@@ -262,21 +268,21 @@ and repeat.
 ││  space  ---   Read samples (if triggered)                  ││
 ││  t      ---   Change trigger point                         ││
 ││  p      ---   Change trigger predicates                    ││
+││  c      ---   Change capture predicates                    ││
+││  R      ---   Toggle automatic reading of samples          ││
 ││  r      ---   Reset trigger                                ││
 ││  v      ---   Write signals to VCD dump                    ││
 │└────────────────────────────────────────────────────────────┘│
 │┌Info────────────────────────────────────────────────────────┐│
 ││Received 0 captured                                         ││
+││The buffer currently contains 100 samples                   ││
 ││The ILA is TRIGGERED                                        ││
-││                                                            ││
-││                                                            ││
-││                                                            ││
-││                                                            ││
-││                                                            ││
-││                                                            ││
-││                                                            ││
-││                                                            ││
+││Auto-rearm is DISABLED                                      ││
+││Auto-sample is DISABLED                                     ││
 ││────────────────────────────────────────────────────────────││
+││                                                            ││
+││                                                            ││
+││                                                            ││
 ││                                                            ││
 ││                                                            ││
 ││                                                            ││
@@ -298,7 +304,7 @@ This is done in the Predicate configuration page. To get to this page, simply pr
 page (to configure the trigger predicates) or `c` (to configure capture predicates). Both pages are
 identical aside from the predicates it is configuring.
 
-Nagivating the different pages can be done with CTRL-LEFT and CTRL-RIGHT. Exiting can be done using
+Navigating the different pages can be done with CTRL-LEFT and CTRL-RIGHT. Exiting can be done using
 ESC and the entire TUI program can be terminated with CTRL-C. Different page elements can be navigated
 by using UP and DOWN keys. Pressing ENTER will attempt to write the data to the ILA, and ESC will
 discard them. These keybinds are always displayed within the UI itself.
@@ -310,7 +316,7 @@ one of the predicates is (OR).
 
 The next page is about masks, in here you can define a mask to filter certain bits on the predicate.
 The compare page follows a similar layout, where you can define a value for the predicates to compare
-incoming data too.
+incoming data to.
 
 By default, no masking is done. Most likely you want to isolate a singular signal. To achieve that
 simply set the masking bits of the signals you don't want to test to zero. Then, on the compare page
@@ -383,10 +389,10 @@ root
 The main important subdirectories are the `ila` and `ila-cli` subdirectories.
 
 The `ila` subdirectory contains all the source code for the FPGA side of the project. To compile the
-Clash code, simply enter the `ila` subdirectory and run `make hdl`. This will compile the demo project.
+Clash code, simply enter the `ila` subdirectory and run `make vhdl`. This will compile the demo project.
 To upload the code to an orangecrab FPGA, invoke `make upload`. The project also contains in-code
 documentation, to generate this code you can invoke `make haddock clash-ila`. This command will output
-an directory, opening that directory in a browser and going to `index.html` will display the in-code
+a directory, opening that directory in a browser and going to `index.html` will display the in-code
 documentation.
 
 The `ila-cli` directory contains the Rust code for the CLI. To compile the Rust code, simply enter

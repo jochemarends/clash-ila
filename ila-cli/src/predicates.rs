@@ -37,7 +37,7 @@ impl TryFrom<u32> for PredicateOperation {
     }
 }
 
-/// The places within the ILA where the predicate logic can be applied too
+/// The places within the ILA where the predicate logic can be applied to
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PredicateTarget {
     Trigger,

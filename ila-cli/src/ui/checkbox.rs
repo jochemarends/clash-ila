@@ -4,7 +4,7 @@ use ratatui::{layout::Rect, style::Style, widgets::WidgetRef};
 #[derive(Debug, Clone)]
 /// A checkbox list widget
 ///
-/// It renders a list of options the user can choose from. Nativation is done via UP/DOWN and
+/// It renders a list of options the user can choose from. Navigation is done via UP/DOWN and
 /// selection of the items via SPACE.
 ///
 /// The items are always rendered vertically.
@@ -74,14 +74,14 @@ impl Checkbox {
         }
     }
 
-    /// Set the marked status of any individial item
+    /// Set the marked status of any individual item
     pub fn set_marked(&mut self, index: usize, selected: bool) -> Option<()> {
         let addr = self.items.get_mut(index)?;
         addr.1 = selected;
         Some(())
     }
 
-    /// Check if any individial item is marked or not
+    /// Check if any individual item is marked or not
     pub fn is_marked(&self, index: usize) -> bool {
         self.items
             .get(index)
@@ -89,7 +89,7 @@ impl Checkbox {
             .unwrap_or(false)
     }
 
-    /// Toggle the marked status of any individial item
+    /// Toggle the marked status of any individual item
     pub fn toggle_marked(&mut self, index: usize) -> Option<()> {
         let addr = self.items.get_mut(index)?;
         addr.1 = !addr.1;
