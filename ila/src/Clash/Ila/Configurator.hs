@@ -244,7 +244,9 @@ instance
         , predicates = fst <$> predicates
         }
     ilaHash = writeSignalInfo toplevel bufferDepth (fromGenSignal <$> signalInfos) (fromGenSignal <$> toGenSignals @out0) (snd <$> predicates)
-    alterShockwavesMetadata = unsafePerformIO $ modifyIORef metadataRef (\m -> m { scope = Just toplevel })
+    alterShockwavesMetadata = unsafePerformIO $ do
+      modifyIORef metadataRef (\m -> m{scope = Just toplevel})
+      addToShockwavesMetadata @out0
 
 {- | General case
 For every pair of new set of `(Signal dom a, "name")`, bundle the signal and collect the name
@@ -526,6 +528,7 @@ class
   ( ConstrainedPorts o BitPack
   , ConstrainedPorts o NFDataX
   , ConstrainedPorts o Generic
+  , ConstrainedPorts o Shockwaves.Waveform
   , BitPack (PortsTuple o)
   , NFDataX (PortsTuple o)
   , Generic (PortsTuple o)
@@ -534,15 +537,18 @@ class
   where
   type PortsTuple o :: Data.Kind.Type
   toGenSignals :: Vec (CountPorts o) GenSignal
+  addToShockwavesMetadata :: IO ()
 
 instance KnownPorts '[] where
   type PortsTuple '[] = ()
   toGenSignals = Nil
+  addToShockwavesMetadata = return ()
 
 instance
   ( BitPack a
   , NFDataX a
   , Generic a
+  , Shockwaves.Waveform a
   , KnownSymbol name
   , KnownPorts xs
   ) =>
@@ -552,6 +558,9 @@ instance
   toGenSignals = genSignal :> toGenSignals @xs
    where
     genSignal = GenSignal{name = symbolVal (Proxy @name), width = natToNum @(BitSize a)}
+  addToShockwavesMetadata = do
+    updateMetadata @a $ symbolVal (Proxy @name)
+    addToShockwavesMetadata @xs
 
 -- | Generate a metadata file for Clash Shockwaves for the ILA's signals.
 --
