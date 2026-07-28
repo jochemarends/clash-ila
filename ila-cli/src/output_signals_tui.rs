@@ -21,6 +21,7 @@ pub enum EventResponse {
     QuitProgram,
     MainMenu,
     Nothing,
+    Error(String),
 }
 
 /// State of the TUI for driving the ILA's output signals
@@ -173,8 +174,7 @@ impl<'a> State<'a> {
                 EventResponse::MainMenu
             },
             Event::Key(KeyEvent { code: KeyCode::Enter, .. }) => {
-                self.apply_outputs(medium, ila);
-                EventResponse::Nothing
+                self.apply_outputs(medium, ila)
             },
             _ => {
                 self.handle_input(event);
@@ -185,7 +185,7 @@ impl<'a> State<'a> {
 
     // Writes the entered inputs to the ILA's staging output signal buffer, then commits the staged
     // values.
-    fn apply_outputs<T>(&mut self, medium: &mut T, ila: &IlaConfig)
+    fn apply_outputs<T>(&mut self, medium: &mut T, ila: &IlaConfig) -> EventResponse
     where
         T: IoRead + IoWrite {
         fn biguint_to_signal((n, signal): (BigUint, &IlaSignal)) -> Signal {
@@ -205,7 +205,7 @@ impl<'a> State<'a> {
             }
         }
 
-        let inputs: Vec<Signal> = self.signals
+        let valid_inputs: Vec<Signal> = self.signals
             .iter()
             .zip(&self.input_states)
             .filter_map(|(s, state)| {
@@ -217,22 +217,28 @@ impl<'a> State<'a> {
             .collect();
 
         // Make sure the inputs are valid
-        if inputs.len() != self.signals.len() {
-            return;
+        if valid_inputs.len() != self.signals.len() {
+            // Above the input fields, there's already a message indicating whether the inputs are
+            // valid, so we don't have to mention it again.
+            return EventResponse::Nothing;
         }
 
         let cluster = SignalCluster {
-            cluster: inputs,
+            cluster: valid_inputs,
             timestamp: std::time::Duration::ZERO,
         };
 
-        let _ = perform_register_operation(
+        let result = perform_register_operation(
             medium,
             ila,
             &IlaRegisters::OutputBackBuffer(cluster.to_data()),
-        );
+        )
+        .and_then(|_| perform_register_operation(medium, ila, &IlaRegisters::OutputBufferSync));
 
-        let _ = perform_register_operation(medium, ila, &IlaRegisters::OutputBufferSync);
+        match result {
+            Ok(_) => EventResponse::Nothing,
+            Err(_) => EventResponse::Error("Something went wrong while trying to update the output signals".to_string()),
+        }
     }
 
     fn handle_input(&mut self, event: &Event) {

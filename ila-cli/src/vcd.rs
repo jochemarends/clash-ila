@@ -279,9 +279,11 @@ impl<W: IoWrite> VcdWriter<W> {
                         } else {
                             self.inner.change_vector(id, unknown_bits(*width))?;
                         }
-                    }
 
-                    Ok((id.next(), signals))
+                        Ok((id.next(), signals))
+                    } else {
+                        Ok((id, signals))
+                    }
                 },
             )?;
         }

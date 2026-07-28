@@ -593,6 +593,10 @@ impl<'a> TuiSession<'a> {
                             crate::output_signals_tui::EventResponse::MainMenu => {
                                 self.state = TuiState::Main;
                             },
+                            crate::output_signals_tui::EventResponse::Error(reason) => {
+                                self.state = TuiState::Main;
+                                self.log.push(reason);
+                            },
                             crate::output_signals_tui::EventResponse::Nothing => continue,
                         }
                     }
