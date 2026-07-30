@@ -25,10 +25,10 @@ import Protocols
 import Protocols.PacketStream
 import Protocols.Wishbone
 
-{- | The buffer of the ila, with signals to control wether or not the signals get captured
+{- | The buffer of the ila, with signals to control whether or not the signals get captured
 
 This function exposes the barebones of the ILA capturing logic and it will only accept boolean
-values to determine wether or not to capture samples. For more advanced trigger logic, check out
+values to determine whether or not to capture samples. For more advanced trigger logic, check out
 `triggerController`
 -}
 ilaCore ::
@@ -44,7 +44,7 @@ ilaCore ::
   Signal dom Bool ->
   -- | The input signal to probe
   Signal dom a ->
-  -- | Wether or not to freeze the buffer
+  -- | Whether or not to freeze the buffer
   Signal dom Bool ->
   -- | Clear the buffer
   Signal dom Bool ->
@@ -92,7 +92,7 @@ setWord ::
   input ->
   -- | The index of the word we want
   Index n ->
-  -- | The value we want to set it too
+  -- | The value we want to set it to
   BitVector word ->
   -- | The output, our input with the word swapped
   input
@@ -106,7 +106,7 @@ range of 0x3000_0000 and 0x3fff_ffff. Each address refers to a specific word (=3
 buffer.
 
 Samples may not precisely equal 32 bits. They may be smaller or bigger than 32 bits. However, in
-this function each sample is assigned one or more addresses for each word it's width takes up.
+this function each sample is assigned one or more addresses for each word its width takes up.
 So a 10 bit sample will only take up one address, and a 50 bit one would take up 2 addresses.
 Different samples never share the same memory space.
 
@@ -198,7 +198,7 @@ A lot of the register map is also exposed as a memory map, with the following la
 | 0x3400_0000 | 0b1111     | Output front buffer   | Read'6      |
 | 0x0000_0001 | 0b0010     | Output buffer sync    | Write'7     |
 
-'1: Reading from this address will return wether or not the ILA has been triggered or not
+'1: Reading from this address will return whether the ILA has been triggered
 '2: Each bit is for one predicate
 '3: Due to the etherbone requiring packets be split in packets of 32 bits, reading the memory
     requires the end user to provide two indices. The specific buffer index the user would like to
@@ -523,7 +523,7 @@ ilaWb (IlaConfig @_ @a @outputs @depth @m depth initTriggerPoint ilaHash tracing
 
     -- \| Generates the wishbone reply
     reply ::
-      -- \| Wether or not we're in a cycle
+      -- \| Whether or not we're in a cycle
       Bool ->
       -- \| The data to reply with (if in a read cycle)
       BitVector 32 ->

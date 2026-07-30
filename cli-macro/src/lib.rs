@@ -4,7 +4,7 @@ use syn::{Arm, Fields, GenericArgument, ItemEnum, PathArguments, Type, Variant};
 
 /// Generates registers from the register CLI enum
 ///
-/// This needs to be done as the register enums aren't fully compatible with eachother, so this
+/// This needs to be done as the register enums aren't fully compatible with each other, so this
 /// allows you to automatically generate the register enum actually used by communication crate
 ///
 /// Required arguments are `unsupported`, `to` and `newtype`, all being identifiers
@@ -186,7 +186,7 @@ pub fn generate_registers(attr: TokenStream, item: TokenStream) -> TokenStream {
     });
 
     quote! {
-        /// All the possible registers the CLI may write too
+        /// All the possible registers the CLI may write to
         #[derive(Subcommand, Debug)]
         pub enum #cli_enum_ident {
             #(#cli_variants),*

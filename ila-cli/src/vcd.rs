@@ -7,7 +7,7 @@ use crate::{communication::SignalCluster, config::IlaConfig};
 ///
 /// * `signals` - The signal cluster to write to a VCD file
 /// * `identifier` - The collective name of the signals
-/// * `path` - Path to the write to write too, will overwrite any file already in place
+/// * `path` - Path to the write to, will overwrite any file already in place
 pub fn write_to_vcd<P: AsRef<Path>>(
     signals: &SignalCluster,
     config: &IlaConfig,

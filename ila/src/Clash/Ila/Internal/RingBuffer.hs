@@ -154,7 +154,7 @@ testbenchRingBuffer ::
   -- | The ring buffer component
   (Signal dom (Index size) -> (Signal dom a, Signal dom (Index (size + 1)))) ->
   -- | Data from the buffer, takes `size + 1` amount of cycles to read out the entire buffer
-  -- The first set of data will arive 1 cycles after being triggered
+  -- The first set of data will arrive 1 cycle after being triggered
   Signal dom (Maybe a)
 testbenchRingBuffer active buffer = readValue
  where

@@ -17,7 +17,7 @@ use cli_macro::generate_registers;
 /// The parser structs should implement `TypedValueParser`, that is the only thing this macro will
 /// not automatically generate.
 ///
-/// Once `TypedValueParser` is implemented, you can savely use the 'Container' struct as a CLI
+/// Once `TypedValueParser` is implemented, you can safely use the 'Container' struct as a CLI
 /// argument
 macro_rules! make_container_arg {
     ($parser:ident, $container:ident, $type:ty, $description:literal) => {
@@ -68,7 +68,7 @@ pub trait ArgumentContainer {
     type Contains;
 }
 
-/// A trait for generating the help description, output may vary depending on wether of not the
+/// A trait for generating the help description, output may vary depending on whether of not the
 /// command being issued is `IsRW::Read` or `IsRW::Write`
 trait ArgumentType {
     fn description(is_rd: IsRW) -> &'static str;
@@ -139,8 +139,8 @@ make_container_arg!(
     IndicesParser,
     Indices,
     Vec<u32>,
-    "Reads an list of comma seperated indices (unsinged 32 bit numbers) (example: 1,2,3)",
-    "Writes an list of comma seperated indices (unsinged 32 bit numbers) (example: 1,2,3)"
+    "Reads a list of comma separated indices (unsinged 32 bit numbers) (example: 1,2,3)",
+    "Writes a list of comma separated indices (unsinged 32 bit numbers) (example: 1,2,3)"
 );
 impl TypedValueParser for IndicesParser {
     type Value = Indices;
@@ -284,7 +284,7 @@ where
 
         // Append our args to the command
         // If either the read of write is `Unsupported`, then it will not render that argument
-        // If it is instead a `Flag`, it will now allow any aditional input, only the flag needs to
+        // If it is instead a `Flag`, it will now allow any additional input, only the flag needs to
         // be given
 
         let cmd = match read_parser.type_id() {
@@ -385,7 +385,7 @@ pub enum RegisterSubcommand {
     TriggerMask(ReadWriteArgument<Word, ByteStream>),
     /// The value used by the trigger to compare samples against, if it is set to do so
     TriggerCompare(ReadWriteArgument<Word, ByteStream>),
-    /// How the trigger should handle mutliple predicates
+    /// How the trigger should handle multiple predicates
     TriggerOp(ReadWriteArgument<Flag, Operation>),
     /// Which predicates are active for the trigger
     TriggerSelect(ReadWriteArgument<Flag, Word>),
@@ -395,11 +395,11 @@ pub enum RegisterSubcommand {
     CaptureMask(ReadWriteArgument<Word, ByteStream>),
     /// The value used by the capture predicates to compare samples against, if it is set to do so
     CaptureCompare(ReadWriteArgument<Word, ByteStream>),
-    /// How the capture should handle mutliple predicates
+    /// How the capture should handle multiple predicates
     CaptureOp(ReadWriteArgument<Flag, Operation>),
     /// Which predicates are active for the capture
     CaptureSelect(ReadWriteArgument<Flag, Word>),
-    /// The amount of samples current stored in the buffer
+    /// The amount of samples currently stored in the buffer
     SampleCount(ReadWriteArgument<Unsupported, Unsupported>),
     /// Controls what 32-bit word to read for each sample from the input buffer.
     InputWordIndex(ReadWriteArgument<Unsupported, Word>),

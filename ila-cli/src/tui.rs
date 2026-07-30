@@ -50,6 +50,7 @@ const KEYBIND_TEXT: &str = r#"  CTRL-c ---   Exit
 #[derive(Debug, PartialEq, Eq, Clone)]
 enum TextPromptReason {
     /// Prompt for the filename to save the VCD too
+    /// Prompt for the filename to save the VCD to
     SaveVcd,
     /// Prompt to change the trigger
     ChangeTrigger,
@@ -97,7 +98,7 @@ pub struct TuiSession<'a> {
     state: TuiState<'a>,
     /// The ILA configuration, specifying certain aspects of the ILA
     config: &'a IlaConfig,
-    /// A log for interactions to log their activity too, regularly gets truncated to fit the
+    /// A log for interactions to log their activity to, regularly gets truncated to fit the
     /// screen during rendering
     log: Vec<String>,
     /// A list of signal clusters captured by the ILA
@@ -331,7 +332,7 @@ impl<'a> TuiSession<'a> {
         }
     }
 
-    /// Handle the keypresses. Returns wether or not it should break out of the main loop or not
+    /// Handle the keypresses. Returns whether or not it should break out of the main loop
     fn on_key_event<T: Read + Write>(&mut self, event: KeyEvent, tx_port: &mut T) -> KeyResponse {
         let response = match (&mut self.state, event.code, event.modifiers) {
             (_, KeyCode::Char('c'), KeyModifiers::CONTROL) => KeyResponse::QuitProgram,
@@ -475,7 +476,7 @@ impl<'a> TuiSession<'a> {
             }
             (TuiState::InPrompt(Prompt::TextPrompt(prompt)), KeyCode::Enter, _) => {
                 // Handle the case of whenever a prompt gets completed
-                // I want to move this to a seperate function, however due to borrow limits I can't
+                // I want to move this to a separate function, however due to borrow limits I can't
                 // and that's kind of very annoying
                 let response = match prompt.reason {
                     TextPromptReason::SaveVcd => {
@@ -515,7 +516,7 @@ impl<'a> TuiSession<'a> {
                         }
                         Err(_) => {
                             self.log.push(
-                                "Invalid input; must be a unsigned 32 bit number".to_string(),
+                                "Invalid input; must be an unsigned 32 bit number".to_string(),
                             );
                             KeyResponse::Nothing
                         }

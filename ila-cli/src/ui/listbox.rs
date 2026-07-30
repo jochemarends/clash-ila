@@ -4,10 +4,10 @@ use ratatui::{layout::Rect, style::Style, widgets::WidgetRef};
 #[derive(Debug, Clone)]
 /// A listbox widget
 ///
-/// It renders a list of options the user can choose from. Nativation is done via UP/DOWN and
+/// It renders a list of options the user can choose from. Navigation is done via UP/DOWN and
 /// selection of the items via SPACE.
 ///
-/// The main different compared to a `Checkbox` is that this only allows for *one* selected item,
+/// The main difference compared to a `Checkbox` is that this only allows for *one* selected item,
 /// where a checkbox may allow the user to pick several, or all items.
 ///
 /// The items are always rendered vertically.
